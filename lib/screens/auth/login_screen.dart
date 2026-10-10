@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
+import '../../services/links.dart';
 import '../../widgets/widgets.dart';
 import 'forgot_password_screen.dart';
 
@@ -76,11 +77,19 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Container(
-                                width: 32,
-                                height: 32,
-                                decoration: const BoxDecoration(color: lav, shape: BoxShape.circle),
-                                child: const Icon(Icons.apartment_rounded, color: ink, size: 18),
+                              ClipOval(
+                                child: Image.asset(
+                                  'assets/images/logo.jpg',
+                                  width: 32,
+                                  height: 32,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 32,
+                                    height: 32,
+                                    color: lav,
+                                    child: const Icon(Icons.apartment_rounded, color: ink, size: 18),
+                                  ),
+                                ),
                               ),
                               const SizedBox(width: 8),
                               Text('ResidentHub', style: hd(16, color: ink)),
@@ -176,6 +185,18 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Reveal(
+                    index: 3,
+                    child: Center(
+                      child: TextButton.icon(
+                        onPressed: () => openWebsite(context),
+                        style: TextButton.styleFrom(foregroundColor: Colors.white),
+                        icon: const Icon(Icons.language_rounded, size: 18),
+                        label: const Text('Visit our website', style: TextStyle(fontWeight: FontWeight.w700)),
                       ),
                     ),
                   ),
