@@ -34,6 +34,7 @@ class _AdminUnitStatusState extends State<AdminUnitStatus> {
         };
         final rows = app.units.where((u) => filter == 'all' || u.usage == filter).toList();
         final feed = app.statusUpdates.take(6).toList();
+        final review = app.units.where((u) => u.needsApproval && u.usageStatus == 'pending').toList();
         return SubPage(
           title: 'Unit status',
           subtitle: 'The current state of every unit, kept up to date by residents. You can update any unit too.',
@@ -48,6 +49,10 @@ class _AdminUnitStatusState extends State<AdminUnitStatus> {
                 ['Vacant', '${count('vacant')}'],
               ]),
             ),
+            if (review.isNotEmpty) ...[
+              Text('Declarations to review', style: hd(18)),
+              for (final u in review) _reviewCard(context, u),
+            ],
             FilterRow(
               options: labels.values.toList(),
               selected: labels[filter]!,
@@ -66,6 +71,64 @@ class _AdminUnitStatusState extends State<AdminUnitStatus> {
           ],
         );
       },
+    );
+  }
+
+  Widget _reviewCard(BuildContext context, Unit u) {
+    return RCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('${u.unit}${u.name == '—' ? '' : ' · ${u.name}'}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+              ),
+              Pill(usageLabel(u.usage), tone: Tone.warn),
+            ],
+          ),
+          if (u.statusNote.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(u.statusNote, style: TextStyle(color: muted(context), fontSize: 13, height: 1.35)),
+          ],
+          if (u.statusDate.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('Declared ${u.statusDate}', style: TextStyle(color: muted(context), fontSize: 11.5)),
+            ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton(
+                  onPressed: () {
+                    app.reviewUsage(u, true, '');
+                    msg(context, '${u.unit} approved.');
+                  },
+                  child: const Text('Approve'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => showFormSheet(
+                    context,
+                    title: 'Reject ${u.unit}',
+                    subtitle: 'The resident will see your note.',
+                    fields: const [FieldSpec('note', 'Note to the resident', hint: 'Why it was not approved', lines: 3)],
+                    submit: 'Reject',
+                    onSubmit: (v) {
+                      app.reviewUsage(u, false, v['note'] as String);
+                      return null;
+                    },
+                  ),
+                  child: const Text('Reject'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

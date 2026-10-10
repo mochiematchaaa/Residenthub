@@ -47,6 +47,22 @@ class ResMore extends StatelessWidget {
             onTap: () => go(context, const ResUnitStatus()),
           ),
         ]),
+        NavGroup(label: 'Community', children: [
+          NavTile(
+            icon: Icons.celebration_outlined,
+            title: 'Events',
+            subtitle: '${app.events.length} upcoming · say you are going',
+            onTap: () => go(context, const ResEvents()),
+          ),
+          NavTile(
+            icon: Icons.how_to_vote_outlined,
+            title: 'Polls & voting',
+            subtitle: app.pollsToVote == 0 ? 'You are all caught up' : '${app.pollsToVote} waiting for your vote',
+            onTap: () => go(context, const ResPolls()),
+            trailing: app.pollsToVote > 0 ? Pill('${app.pollsToVote}', tone: Tone.warn) : null,
+          ),
+          NavTile(icon: Icons.contacts_outlined, title: 'Directory & house rules', subtitle: 'Contacts, rules and common questions', onTap: () => go(context, const ResDirectory())),
+        ]),
         NavGroup(label: 'Documents', children: [
           NavTile(icon: Icons.lock_outline_rounded, title: 'Finance documents', subtitle: 'Statement, payments and receipts', onTap: () => go(context, const ResFinanceDocs())),
           NavTile(icon: Icons.folder_copy_outlined, title: 'Community documents', subtitle: '${app.communityDocs.length} shared files', onTap: () => go(context, const ResDocuments())),

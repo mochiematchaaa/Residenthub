@@ -48,10 +48,29 @@ class AdminMore extends StatelessWidget {
           NavTile(
             icon: Icons.home_work_outlined,
             title: 'Unit status',
-            subtitle: app.newStatusUpdates == 0 ? 'State of every unit' : '${app.newStatusUpdates} new update(s) from residents',
+            subtitle: app.rentalsToReview > 0
+                ? '${app.rentalsToReview} declaration(s) to review'
+                : app.newStatusUpdates == 0 ? 'State of every unit' : '${app.newStatusUpdates} new update(s) from residents',
             onTap: () => go(context, const AdminUnitStatus()),
             trailing: app.newStatusUpdates > 0 ? Pill('${app.newStatusUpdates}', tone: Tone.warn) : null,
           ),
+        ]),
+        NavGroup(label: 'Operations', children: [
+          NavTile(
+            icon: Icons.how_to_vote_outlined,
+            title: 'Polls & voting',
+            subtitle: '${app.openPolls} open · ${app.polls.length} total',
+            onTap: () => go(context, const AdminPolls()),
+          ),
+          NavTile(
+            icon: Icons.two_wheeler_outlined,
+            title: 'Motor parking',
+            subtitle: '${app.slotsUsed} of ${app.slots.length} slots used${app.pendingParking > 0 ? ' · ${app.pendingParking} waiting' : ''}',
+            onTap: () => go(context, const AdminParking()),
+            trailing: app.pendingParking > 0 ? Pill('${app.pendingParking}', tone: Tone.warn) : null,
+          ),
+          NavTile(icon: Icons.bar_chart_rounded, title: 'Reports', subtitle: 'Collections, units, concerns, bookings', onTap: () => go(context, const AdminReports())),
+          NavTile(icon: Icons.history_rounded, title: 'Activity log', subtitle: '${app.activityLog.length} recorded', onTap: () => go(context, const AdminActivity())),
         ]),
         NavGroup(label: 'Money and files', children: [
           NavTile(icon: Icons.north_east_rounded, title: 'Expenses', subtitle: '${app.expenses.length} purchases · ${peso(app.spentThisMonth)} this month · monthly report', onTap: () => go(context, const AdminExpenses())),
