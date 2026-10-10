@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+import 'community.dart';
 import 'doc_model.dart';
 import 'doc_seed.dart';
 import 'expenses.dart';
@@ -44,9 +45,18 @@ class Unit {
   int overdue;
   String usage; // current unit state: owner | tenant | shortterm | business | vacant | away | renovation
   String statusNote, statusDate;
+
+  /// For short-term rentals and home businesses: '' | pending | approved | rejected.
+  String usageStatus;
+
+  /// The administrator's note shown to the resident when a declaration is rejected.
+  String usageRemark;
   Unit(this.unit, this.name, this.type, this.status, this.contact, this.overdue,
       this.usage,
-      {this.statusNote = '', this.statusDate = ''});
+      {this.statusNote = '', this.statusDate = '', this.usageStatus = '', this.usageRemark = ''});
+
+  /// Short-term rentals and home businesses need the administrator's approval.
+  bool get needsApproval => usage == 'shortterm' || usage == 'business';
 }
 
 /// One entry in a unit's status history (also drives the admin's update feed).
@@ -108,8 +118,9 @@ class Announcement {
 
 class EventItem {
   final int id;
-  final String title, date, place;
-  EventItem(this.id, this.title, this.date, this.place);
+  final String title, date, place, about;
+  final int going; // residents already going, before the signed-in resident's own RSVP
+  EventItem(this.id, this.title, this.date, this.place, {this.about = '', this.going = 0});
 }
 
 class Account {
@@ -242,11 +253,11 @@ class AppState extends ChangeNotifier {
     Unit('Unit 12A', 'Reyes Household', 'Owner', 'Occupied', '0917 555 0112', 1, 'owner'),
     Unit('Unit 7C', 'Garcia Household', 'Tenant', 'Occupied', '0917 555 0234', 1, 'tenant'),
     Unit('Unit 3B', 'Villanueva Household', 'Owner', 'Occupied', '0917 555 0311', 2, 'shortterm',
-        statusNote: 'Listed on Airbnb.', statusDate: 'Mar 12, 2026'),
+        statusNote: 'Listed on Airbnb.', statusDate: 'Mar 12, 2026', usageStatus: 'approved'),
     Unit('Unit 15D', 'Mendoza Household', 'Tenant', 'Occupied', '0917 555 0455', 1, 'tenant'),
     Unit('Unit 9A', 'Cruz Household', 'Owner', 'Occupied', '0917 555 0567', 3, 'owner'),
     Unit('Unit 21B', 'Santos Household', 'Owner', 'Occupied', '0917 555 0678', 1, 'business',
-        statusNote: 'Online reselling of home goods.', statusDate: 'Sep 28, 2026'),
+        statusNote: 'Online reselling of home goods.', statusDate: 'Sep 28, 2026', usageStatus: 'pending'),
     Unit('Unit 5A', '—', '—', 'Vacant', '—', 2, 'vacant', statusNote: 'No tenant yet.', statusDate: 'Sep 1, 2026'),
     Unit('Unit 18C', 'Aquino Household', 'Tenant', 'Occupied', '0917 555 0891', 1, 'tenant'),
     Unit('Unit 4D', 'Reyes-Torres Household', 'Owner', 'Occupied', '0917 555 0932', 0, 'owner'),
@@ -305,7 +316,11 @@ class AppState extends ChangeNotifier {
     Due(8, 'Unit 18C', 'Aquino Household', 1),
   ];
   num motorRate = 500;
-  final List<ParkingReq> parking = [];
+  final List<ParkingReq> parking = [
+    ParkingReq('Unit 4D', 'Reyes-Torres Household'),
+    ParkingReq('Unit 11B', 'Fernandez Household'),
+  ];
+  final List<ParkingSlot> slots = seedSlots();
 
   // ---- payment options, proofs and receipts ----
   // The account details below are SAMPLE text. The administrator edits them in
@@ -568,11 +583,16 @@ class AppState extends ChangeNotifier {
       ];
 
   final List<EventItem> events = [
-    EventItem(1, 'Community Clean-Up Drive', 'Oct 4, 2026 · 7:00 AM', 'Ground floor lobby'),
-    EventItem(2, 'Zumba at the Function Hall', 'Every Sat · 6:00 AM', 'Function Hall'),
-    EventItem(3, 'Annual General Assembly', 'Oct 18, 2026 · 6:00 PM', 'Function Hall'),
-    EventItem(4, "Halloween Kids' Party", 'Oct 31, 2026 · 4:00 PM', 'Function Hall'),
-    EventItem(5, 'HOA General Assembly', 'Nov 8, 2026 · 6:00 PM', 'Function Hall'),
+    EventItem(1, 'Community Clean-Up Drive', 'Oct 4, 2026 · 7:00 AM', 'Ground floor lobby',
+        about: 'Gloves and bags are provided. Breakfast is on the association.', going: 19),
+    EventItem(2, 'Zumba at the Function Hall', 'Every Sat · 6:00 AM', 'Function Hall',
+        about: 'A free weekly workout for residents of all ages. Bring a towel and water.', going: 14),
+    EventItem(3, 'Annual General Assembly', 'Oct 18, 2026 · 6:00 PM', 'Function Hall',
+        about: 'Yearly report, budget and board updates. Every unit is encouraged to send a representative.', going: 41),
+    EventItem(4, "Halloween Kids' Party", 'Oct 31, 2026 · 4:00 PM', 'Function Hall',
+        about: 'Kids in costume walk the building with a parent. Volunteers are welcome to hand out treats.', going: 27),
+    EventItem(5, 'HOA General Assembly', 'Nov 8, 2026 · 6:00 PM', 'Function Hall',
+        about: 'Board election and the budget for next year.', going: 33),
   ];
 
   /// What happened in the app, newest first (shown as "Recent activity").
@@ -580,7 +600,7 @@ class AppState extends ChangeNotifier {
 
   void logActivity(String title, String area) {
     activityLog.insert(0, ActivityEntry(title, area, DateTime.now()));
-    if (activityLog.length > 30) activityLog.removeRange(30, activityLog.length);
+    if (activityLog.length > 200) activityLog.removeRange(200, activityLog.length);
   }
 
   /// "just now", "5 minutes ago", "Yesterday", "Oct 8, 2026".
@@ -629,6 +649,21 @@ class AppState extends ChangeNotifier {
         out.add(['Your payment (ref. ${p.reference}) could not be confirmed. Please check the reference number.', 'bad']);
       }
     }
+    final rec = myUnitRec;
+    if (rec != null && rec.needsApproval) {
+      if (rec.usageStatus == 'approved') {
+        out.add(['Your ${usageLabel(rec.usage).toLowerCase()} was approved.', 'good']);
+      } else if (rec.usageStatus == 'rejected') {
+        out.add(['Your ${usageLabel(rec.usage).toLowerCase()} was not approved. ${rec.usageRemark}', 'bad']);
+      } else if (rec.usageStatus == 'pending') {
+        out.add(['Your ${usageLabel(rec.usage).toLowerCase()} is waiting for the administrator.', 'info']);
+      }
+    }
+    if (pollsToVote > 0) {
+      out.add(['$pollsToVote poll${pollsToVote > 1 ? 's' : ''} waiting for your vote.', 'info']);
+    }
+    final mySlot = slotOf(myUnit);
+    if (mySlot != null) out.add(['Motor parking slot ${mySlot.id} is assigned to your unit.', 'good']);
     for (final a in announcements.where((a) => a.status == 'Published').take(2)) {
       out.add(['New announcement: ${a.title}.', 'info']);
     }
@@ -876,6 +911,10 @@ class AppState extends ChangeNotifier {
   void _applyStatus(Unit u, String key, String note, String by) {
     final date = shortDate(DateTime.now());
     u.usage = key;
+    final needs = key == 'shortterm' || key == 'business';
+    // A resident's declaration waits for the administrator; the administrator's own change is approved.
+    u.usageStatus = !needs ? '' : (by == 'Admin' ? 'approved' : 'pending');
+    u.usageRemark = '';
     u.statusNote = note;
     u.statusDate = date;
     u.status = key == 'vacant' ? 'Vacant' : 'Occupied';
@@ -967,8 +1006,115 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  void confirmParking(ParkingReq p) {
+  /// Gives the first free slot to a parking request. Returns an error message or null.
+  String? assignRequest(ParkingReq p) {
+    final free = freeSlot;
+    if (free == null) return 'There are no free slots right now.';
+    free.unit = p.unit;
     p.confirmed = true;
+    logActivity('Parking slot ${free.id} assigned to ${p.unit}', 'Parking');
+    _n();
+    return null;
+  }
+
+  void confirmParking(ParkingReq p) => assignRequest(p);
+
+  void declineParking(ParkingReq p) {
+    parking.remove(p);
+    logActivity('Parking request declined, ${p.unit}', 'Parking');
+    _n();
+  }
+
+  ParkingSlot? get freeSlot {
+    for (final s in slots) {
+      if (!s.used) return s;
+    }
+    return null;
+  }
+
+  int get slotsUsed => slots.where((s) => s.used).length;
+
+  /// The slot a unit has been given, or null.
+  ParkingSlot? slotOf(String unit) {
+    for (final s in slots) {
+      if (s.unit == unit) return s;
+    }
+    return null;
+  }
+
+  void assignSlot(ParkingSlot s, String unit) {
+    s.unit = unit;
+    for (final r in parking.where((r) => r.unit == unit)) {
+      r.confirmed = true;
+    }
+    logActivity('Parking slot ${s.id} assigned to $unit', 'Parking');
+    _n();
+  }
+
+  void releaseSlot(ParkingSlot s) {
+    logActivity('Parking slot ${s.id} released from ${s.unit}', 'Parking');
+    s.unit = '';
+    _n();
+  }
+
+  // ---- polls (admin publishes, residents vote once per unit) ----
+  final List<Poll> polls = seedPolls();
+  final Map<String, int> _votes = {}; // '<unit>|<pollId>' -> option index
+
+  int? myVote(int pollId) => _votes['$myUnit|$pollId'];
+  int get pollsToVote => polls.where((p) => p.open && myVote(p.id) == null).length;
+  int get openPolls => polls.where((p) => p.open).length;
+
+  String? castVote(Poll p, int option) {
+    if (!p.open) return 'This poll is closed.';
+    if (myVote(p.id) != null) return 'Your unit has already voted in this poll.';
+    if (option < 0 || option >= p.options.length) return 'Pick an option first.';
+    p.options[option].votes++;
+    _votes['$myUnit|${p.id}'] = option;
+    logActivity('Poll vote from $myUnit: ${p.question}', 'Polls');
+    _n();
+    return null;
+  }
+
+  String? addPoll(String question, String optionsRaw) {
+    final opts = optionsRaw.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (question.trim().isEmpty || opts.length < 2) return 'Add a question and at least two options (one per line).';
+    final closes = shortDate(DateTime.now().add(const Duration(days: 7)));
+    polls.insert(0, Poll(nextId(), question.trim(), true, closes, [for (final o in opts) PollOption(o, 0)]));
+    logActivity('Poll published: ${question.trim()}', 'Polls');
+    _n();
+    return null;
+  }
+
+  void togglePoll(Poll p) {
+    p.open = !p.open;
+    logActivity('Poll ${p.open ? 'reopened' : 'closed'}: ${p.question}', 'Polls');
+    _n();
+  }
+
+  void deletePoll(Poll p) {
+    polls.remove(p);
+    logActivity('Poll deleted: ${p.question}', 'Polls');
+    _n();
+  }
+
+  // ---- events (residents say they are going) ----
+  final Set<int> rsvp = {};
+  int goingCount(EventItem e) => e.going + (rsvp.contains(e.id) ? 1 : 0);
+
+  void toggleRsvp(EventItem e) {
+    if (!rsvp.remove(e.id)) rsvp.add(e.id);
+    logActivity('${rsvp.contains(e.id) ? 'Going to' : 'No longer going to'}: ${e.title}', 'Events');
+    _n();
+  }
+
+  // ---- unit rentals (the administrator reviews short-term rentals and home businesses) ----
+  int get rentalsToReview => units.where((u) => u.needsApproval && u.usageStatus == 'pending').length;
+
+  void reviewUsage(Unit u, bool approve, String note) {
+    u.usageStatus = approve ? 'approved' : 'rejected';
+    u.usageRemark = approve ? '' : (note.trim().isEmpty ? 'Not approved at this time. Please contact the office.' : note.trim());
+    logActivity('${approve ? 'Approved' : 'Rejected'} ${usageLabel(u.usage).toLowerCase()} for ${u.unit}', 'Units');
     _n();
   }
 

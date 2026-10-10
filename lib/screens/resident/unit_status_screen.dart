@@ -73,6 +73,10 @@ class _ResUnitStatusState extends State<ResUnitStatus> {
                     const SizedBox(height: 10),
                     Text('Last updated ${rec.statusDate}', style: const TextStyle(color: inkSoft, fontSize: 12)),
                   ],
+                  if (rec != null && rec.needsApproval) ...[
+                    const SizedBox(height: 14),
+                    _approval(rec),
+                  ],
                 ],
               ),
             ),
@@ -114,8 +118,9 @@ class _ResUnitStatusState extends State<ResUnitStatus> {
                         final err = app.postMyStatus(sel, note.text);
                         setState(() => error = err);
                         if (err == null) {
+                          final needs = sel == 'shortterm' || sel == 'business';
                           note.clear();
-                          msg(context, 'Status updated. The administrator can see it now.');
+                          msg(context, needs ? "Sent. The administrator will review it, and you will see the decision here." : 'Status updated. The administrator can see it now.');
                         }
                       },
                       child: const Text('Post update'),
@@ -142,6 +147,51 @@ class _ResUnitStatusState extends State<ResUnitStatus> {
           ],
         );
       },
+    );
+  }
+
+  /// Short-term rentals and home businesses wait for the administrator's decision.
+  Widget _approval(Unit rec) {
+    final st = rec.usageStatus.isEmpty ? 'pending' : rec.usageStatus;
+    final decided = st != 'pending';
+    final rejected = st == 'rejected';
+    Widget step(String label, bool done, {bool bad = false}) => Expanded(
+          child: Column(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(color: bad ? danger : (done ? ink : Colors.white.withAlpha(190)), shape: BoxShape.circle),
+                child: Icon(bad ? Icons.close_rounded : (done ? Icons.check_rounded : Icons.more_horiz_rounded),
+                    size: 16, color: done || bad ? Colors.white : ink),
+              ),
+              const SizedBox(height: 4),
+              Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+            ],
+          ),
+        );
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Colors.white.withAlpha(150), borderRadius: BorderRadius.circular(20)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            step('Declared', true),
+            step('Under review', decided),
+            step(rejected ? 'Not approved' : 'Approved', decided, bad: rejected),
+          ]),
+          const SizedBox(height: 10),
+          Text(
+            st == 'pending'
+                ? 'Waiting for the administrator to review this.'
+                : st == 'approved'
+                    ? 'The administrator approved this.'
+                    : 'Not approved. ${rec.usageRemark}',
+            style: const TextStyle(fontSize: 12.5, height: 1.35, color: inkSoft),
+          ),
+        ],
+      ),
     );
   }
 

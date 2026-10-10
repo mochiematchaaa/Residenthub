@@ -290,7 +290,9 @@ class ResDues extends StatelessWidget {
                 style: TextStyle(color: muted(context), fontSize: 13, height: 1.45),
               ),
               const SizedBox(height: 12),
-              if (app.parkingRequested)
+              if (app.slotOf(app.myUnit) != null)
+                Pill('Your slot: ${app.slotOf(app.myUnit)!.id}', tone: Tone.good)
+              else if (app.parkingRequested)
                 const Pill('Request sent — awaiting admin confirmation', tone: Tone.good)
               else
                 SizedBox(

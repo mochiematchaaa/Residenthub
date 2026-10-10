@@ -24,6 +24,18 @@ void adminJump(BuildContext context, int target) {
     case 13:
       go(context, const AdminDocs());
       break;
+    case 14:
+      go(context, const AdminPolls());
+      break;
+    case 15:
+      go(context, const AdminParking());
+      break;
+    case 16:
+      go(context, const AdminReports());
+      break;
+    case 17:
+      go(context, const AdminActivity());
+      break;
   }
 }
 
@@ -33,7 +45,8 @@ void showAdminAttention(BuildContext context) {
     [Icons.event_note_outlined, '${app.pendingBookings} booking request(s) to review', 2],
     [Icons.payments_outlined, '${app.unpaidCount} unit(s) with unpaid dues', 3],
     [Icons.home_work_outlined, '${app.newStatusUpdates} new unit status update(s)', 12],
-    [Icons.two_wheeler_outlined, '${app.pendingParking} parking request(s)', 3],
+    [Icons.two_wheeler_outlined, '${app.pendingParking} parking request(s)', 15],
+    [Icons.fact_check_outlined, '${app.rentalsToReview} unit declaration(s) to review', 12],
   ];
   showModalBottomSheet<void>(
     context: context,
@@ -73,6 +86,10 @@ List<SearchItem> adminSearchItems(BuildContext context) => [
       SearchItem('Grievances', 'Move concerns to resolved', Icons.build_circle_outlined, () => go(context, const AdminGrievances())),
       SearchItem('Unit status', 'Occupied, rented, vacant...', Icons.home_work_rounded, () => go(context, const AdminUnitStatus())),
       SearchItem('Profile and settings', 'Edit your profile, photo, password', Icons.settings_outlined, () => go(context, const AdminSettings())),
+      SearchItem('Polls & voting', 'Publish polls, see results', Icons.how_to_vote_outlined, () => go(context, const AdminPolls())),
+      SearchItem('Motor parking', 'Assign and release slots', Icons.two_wheeler_outlined, () => go(context, const AdminParking())),
+      SearchItem('Reports', 'Collections, units, concerns, export', Icons.bar_chart_rounded, () => go(context, const AdminReports())),
+      SearchItem('Activity log', 'Everything that happened', Icons.history_rounded, () => go(context, const AdminActivity())),
       SearchItem('Expenses', 'Record purchases, monthly expense report', Icons.north_east_rounded, () => go(context, const AdminExpenses())),
       SearchItem('Finance documents', 'Client records, payments, receipts', Icons.lock_outline_rounded, () => go(context, const AdminFinanceDocs())),
       SearchItem('Community documents', 'Rules, forms, notices, minutes', Icons.folder_copy_outlined, () => go(context, const AdminDocs())),

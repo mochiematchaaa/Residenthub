@@ -323,11 +323,15 @@ class _AdminFinanceState extends State<AdminFinance> {
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text('${p.unit} · ${p.name}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: app.slotOf(p.unit) == null ? null : Text('Slot ${app.slotOf(p.unit)!.id}'),
                     trailing: p.confirmed
                         ? const Pill('Confirmed')
                         : FilledButton(
                             style: FilledButton.styleFrom(minimumSize: const Size(0, 38)),
-                            onPressed: () => app.confirmParking(p),
+                            onPressed: () {
+                              final err = app.assignRequest(p);
+                              if (err != null) msg(context, err);
+                            },
                             child: const Text('Confirm'),
                           ),
                   ),
