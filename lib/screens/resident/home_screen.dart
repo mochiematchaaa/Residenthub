@@ -160,7 +160,7 @@ class ResHome extends StatelessWidget {
                   onTap: () => go(context, const ResGrievances()),
                 ),
                 FeatureTile(
-                  title: 'Unit status',
+                  title: 'Unit Rental',
                   metric: statusOf(rec?.usage ?? 'owner').shortLabel,
                   subtitle: rec == null || rec.statusDate.isEmpty ? 'Tell the admin about your unit' : 'Updated ${rec.statusDate}',
                   icon: statusOf(rec?.usage ?? 'owner').icon,
@@ -328,7 +328,7 @@ class ResHome extends StatelessWidget {
         SearchItem('Events', 'Upcoming events, RSVP', Icons.celebration_outlined, () => go(context, const ResEvents())),
         SearchItem('Directory & house rules', 'Contacts, rules, FAQ', Icons.contacts_outlined, () => go(context, const ResDirectory())),
         SearchItem('Documents', 'House rules, forms, minutes', Icons.folder_copy_outlined, () => go(context, const ResDocuments())),
-        SearchItem('Unit status', 'Post an update on your unit', Icons.home_work_rounded, () => go(context, const ResUnitStatus())),
+        SearchItem('Unit Rental', 'Declare how your unit is used', Icons.home_work_rounded, () => go(context, const ResUnitStatus())),
         SearchItem('Settings', 'Profile, password, dark mode, devices', Icons.settings_outlined, () => go(context, const ResSettings())),
       ];
 }

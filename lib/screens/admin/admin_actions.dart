@@ -44,7 +44,7 @@ void showAdminAttention(BuildContext context) {
   final items = [
     [Icons.event_note_outlined, '${app.pendingBookings} booking request(s) to review', 2],
     [Icons.payments_outlined, '${app.unpaidCount} unit(s) with unpaid dues', 3],
-    [Icons.home_work_outlined, '${app.newStatusUpdates} new unit status update(s)', 12],
+    [Icons.home_work_outlined, '${app.newStatusUpdates} new rental update(s)', 12],
     [Icons.two_wheeler_outlined, '${app.pendingParking} parking request(s)', 15],
     [Icons.fact_check_outlined, '${app.rentalsToReview} unit declaration(s) to review', 12],
   ];
@@ -84,7 +84,7 @@ List<SearchItem> adminSearchItems(BuildContext context) => [
       SearchItem('Finance', 'Dues, charges, motor parking rate', Icons.payments_rounded, () => app.setAdminTab(3)),
       SearchItem('Announcements & events', 'Post news, send alerts', Icons.campaign_rounded, () => go(context, const AdminAnnouncements())),
       SearchItem('Grievances', 'Move concerns to resolved', Icons.build_circle_outlined, () => go(context, const AdminGrievances())),
-      SearchItem('Unit status', 'Occupied, rented, vacant...', Icons.home_work_rounded, () => go(context, const AdminUnitStatus())),
+      SearchItem('Rentals', 'Review declarations, occupancy registry', Icons.home_work_rounded, () => go(context, const AdminUnitStatus())),
       SearchItem('Profile and settings', 'Edit your profile, photo, password', Icons.settings_outlined, () => go(context, const AdminSettings())),
       SearchItem('Polls & voting', 'Publish polls, see results', Icons.how_to_vote_outlined, () => go(context, const AdminPolls())),
       SearchItem('Motor parking', 'Assign and release slots', Icons.two_wheeler_outlined, () => go(context, const AdminParking())),

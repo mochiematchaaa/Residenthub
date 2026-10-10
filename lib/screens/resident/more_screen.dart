@@ -42,8 +42,8 @@ class ResMore extends StatelessWidget {
           NavTile(icon: Icons.edit_note_rounded, title: 'Grievances', subtitle: openGr == 0 ? 'Nothing open' : '$openGr open', onTap: () => go(context, const ResGrievances())),
           NavTile(
             icon: statusOf(rec?.usage ?? 'owner').icon,
-            title: 'Unit status',
-            subtitle: rec == null ? 'Post an update on your unit' : 'Now: ${usageLabel(rec.usage)}',
+            title: 'Unit Rental',
+            subtitle: rec == null ? 'Declare how your unit is used' : 'Now: ${usageLabel(rec.usage)}',
             onTap: () => go(context, const ResUnitStatus()),
           ),
         ]),

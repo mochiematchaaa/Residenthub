@@ -38,7 +38,7 @@ class AdminHome extends StatelessWidget {
               ActionPill(Icons.celebration_outlined, 'Add event', () => adminJump(context, 5)),
               ActionPill(Icons.request_quote_outlined, 'Finance', () => adminJump(context, 3)),
               ActionPill(Icons.upload_file_outlined, 'Upload file', () => adminJump(context, 13)),
-              ActionPill(Icons.home_work_outlined, 'Unit status', () => adminJump(context, 12)),
+              ActionPill(Icons.home_work_outlined, 'Rentals', () => adminJump(context, 12)),
             ],
           ),
         ),
@@ -144,7 +144,7 @@ class AdminHome extends StatelessWidget {
                 onTap: () => adminJump(context, 2),
               ),
               ImageTile(
-                title: 'Unit status',
+                title: 'Rentals',
                 metric: '${app.newStatusUpdates}',
                 subtitle: app.newStatusUpdates == 0 ? 'new updates. All caught up' : 'new update(s) from residents',
                 image: 'assets/images/need_units.png',
