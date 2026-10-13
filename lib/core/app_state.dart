@@ -147,7 +147,13 @@ class SessionInfo {
 class ParkingReq {
   final String unit, name;
   bool confirmed;
-  ParkingReq(this.unit, this.name, {this.confirmed = false});
+
+  /// Shown to the administrator ("Just now", "2 days ago") and used to keep requests in order.
+  final String when;
+  final int at;
+  ParkingReq(this.unit, this.name,
+      {this.confirmed = false, this.when = 'Just now', int? at})
+      : at = at ?? DateTime.now().millisecondsSinceEpoch;
 }
 
 // ---------------------------------------------------------------- state
@@ -317,8 +323,8 @@ class AppState extends ChangeNotifier {
   ];
   num motorRate = 500;
   final List<ParkingReq> parking = [
-    ParkingReq('Unit 4D', 'Reyes-Torres Household'),
-    ParkingReq('Unit 11B', 'Fernandez Household'),
+    ParkingReq('Unit 4D', 'Reyes-Torres Household', when: '2 days ago', at: 1),
+    ParkingReq('Unit 11B', 'Fernandez Household', when: 'Yesterday', at: 2),
   ];
   final List<ParkingSlot> slots = seedSlots();
 
@@ -335,7 +341,6 @@ class AppState extends ChangeNotifier {
     PayMethod('Maya', 'Account name: (add name)\nNumber: (add Maya number)'),
   ];
 
-  int _receiptSeq = 7;
   final List<PaymentRecord> payments = [
     const PaymentRecord(6, 'OR-2026-0006', 'Unit 6B', 'Jessele Fugaban', '1 month association dues',
         'Cash or check at the office', '—', 'Aug 12, 2026', 450),
@@ -355,7 +360,7 @@ class AppState extends ChangeNotifier {
   List<PaymentRecord> get myPayments =>
       payments.where((p) => p.unit == myUnit).toList();
   List<PaymentProof> get myProofs =>
-      proofs.where((p) => p.unit == myUnit).toList();
+      proofs.where((p) => p.unit == myUnit && !p.direct).toList();
   int get pendingProofs => proofs.where((p) => p.status == 'Pending').length;
   List<PayMethod> get enabledPayMethods =>
       payMethods.where((m) => m.enabled).toList();
@@ -384,21 +389,65 @@ class AppState extends ChangeNotifier {
   List<String> collectionTrendLabels([int n = 6]) =>
       [for (final m in trendMonths(n)) _months[m.month - 1].substring(0, 3)];
 
+  int _lastCloudId = 0;
+
+  /// An id that is unique across devices (milliseconds), so the app and the website never clash.
+  int cloudId() {
+    var t = DateTime.now().millisecondsSinceEpoch;
+    if (t <= _lastCloudId) t = _lastCloudId + 1;
+    _lastCloudId = t;
+    return t;
+  }
+
+  /// The next receipt number, counted from every receipt the app and the website know about.
+  /// OR-2026-0001 to 0006 are the sample receipts, so numbering continues after those.
+  String nextReceiptNo() {
+    final re = RegExp(r'^OR-2026-(\d+)$');
+    var max = 6;
+    for (final s in [...payments.map((p) => p.receiptNo), ...proofs.map((p) => p.receiptNo)]) {
+      final m = re.firstMatch(s);
+      if (m != null) {
+        final n = int.parse(m[1]!);
+        if (n > max) max = n;
+      }
+    }
+    return 'OR-2026-${(max + 1).toString().padLeft(4, '0')}';
+  }
+
+  /// Records a payment and its receipt. A payment the office records itself is also added to
+  /// [proofs] as already confirmed, so the website shows the same receipt.
   PaymentRecord _addPayment(String unit, String payer, String forText,
-      String method, String reference, num amount) {
+      String method, String reference, num amount,
+      {PaymentProof? proof}) {
+    final no = (proof != null && proof.receiptNo.isNotEmpty) ? proof.receiptNo : nextReceiptNo();
+    final date = shortDate(DateTime.now());
     final rec = PaymentRecord(
       nextId(),
-      'OR-2026-${(_receiptSeq++).toString().padLeft(4, '0')}',
+      no,
       unit,
       payer,
       forText,
       method,
       reference.trim().isEmpty ? '—' : reference.trim(),
-      shortDate(DateTime.now()),
+      date,
       amount,
     );
     payments.insert(0, rec);
+    if (proof == null) {
+      proofs.insert(
+        0,
+        PaymentProof(cloudId(), unit, payer, method, rec.reference, date, amount,
+            status: 'Confirmed', forText: forText, receiptNo: no, confirmedOn: date, direct: true),
+      );
+    }
     return rec;
+  }
+
+  /// The oldest unpaid due of a unit (monthly dues first, then one-off charges).
+  Due? _firstOpenDue(String unit) {
+    final open = dues.where((d) => d.unit == unit && !d.paid).toList()
+      ..sort((a, b) => a.isCharge == b.isCharge ? 0 : (a.isCharge ? 1 : -1));
+    return open.isEmpty ? null : open.first;
   }
 
   static String _duesText(int months) =>
@@ -411,8 +460,11 @@ class AppState extends ChangeNotifier {
     if (reference.trim().isEmpty) {
       return 'Enter the reference number from your payment receipt.';
     }
-    proofs.insert(0,
-        PaymentProof(nextId(), myUnit, myHousehold, method, reference.trim(), shortDate(DateTime.now()), a));
+    final due = _firstOpenDue(myUnit);
+    proofs.insert(
+        0,
+        PaymentProof(cloudId(), myUnit, myHousehold, method, reference.trim(), shortDate(DateTime.now()), a,
+            forText: due == null ? 'Association dues' : (due.isCharge ? due.note : _duesText(due.months))));
     logActivity('Payment reference sent, $myUnit', 'Finance');
     _n();
     return null;
@@ -506,25 +558,116 @@ class AppState extends ChangeNotifier {
 
   /// Admin: the proof checks out - record the payment and issue a receipt.
   PaymentRecord confirmProof(PaymentProof p) {
-    p.status = 'Confirmed';
-    final open = dues.where((d) => d.unit == p.unit && !d.paid).toList()
-      ..sort((a, b) => a.isCharge == b.isCharge ? 0 : (a.isCharge ? 1 : -1));
-    final String forText;
-    if (open.isNotEmpty) {
-      open.first.paid = true;
-      forText = open.first.isCharge ? open.first.note : _duesText(open.first.months);
-    } else {
-      forText = 'Association dues';
+    if (p.status != 'Pending') {
+      // Already handled (for example on the website a moment ago): return the receipt that exists.
+      for (final r in payments) {
+        if (p.receiptNo.isNotEmpty && r.receiptNo == p.receiptNo) return r;
+      }
     }
-    final rec = _addPayment(p.unit, p.payer, forText, p.method, p.reference, p.amount);
+    p.status = 'Confirmed';
+    p.receiptNo = nextReceiptNo();
+    p.confirmedOn = shortDate(DateTime.now());
+    final due = _firstOpenDue(p.unit);
+    final String forText;
+    if (due != null) {
+      due.paid = true;
+      forText = due.isCharge ? due.note : _duesText(due.months);
+    } else {
+      forText = p.forText.isNotEmpty ? p.forText : 'Association dues';
+    }
+    p.forText = forText;
+    final rec = _addPayment(p.unit, p.payer, forText, p.method, p.reference, p.amount, proof: p);
     logActivity('Payment recorded, ${p.unit}', 'Finance');
     _n();
     return rec;
   }
 
   void rejectProof(PaymentProof p) {
+    if (p.status != 'Pending') return;
     p.status = 'Rejected';
     logActivity('Payment reference not confirmed, ${p.unit}', 'Finance');
+    _n();
+  }
+
+  // ---- live updates from the website / other devices (see lib/services/cloud_sync.dart) ----
+
+  static int _rank(String status) => status == 'Pending' ? 0 : 1;
+
+  /// Takes the payment proofs the shared database holds and updates this app to match.
+  /// A proof that is already confirmed or rejected here is never turned back into "Pending".
+  void applyCloudProofs(List<PaymentProof> remote) {
+    var changed = false;
+    for (final r in remote) {
+      final i = proofs.indexWhere((p) => p.id == r.id);
+      if (i < 0) {
+        proofs.add(r);
+        changed = true;
+      } else {
+        final p = proofs[i];
+        if (_rank(r.status) >= _rank(p.status) &&
+            (p.status != r.status ||
+                p.receiptNo != r.receiptNo ||
+                p.confirmedOn != r.confirmedOn ||
+                (r.forText.isNotEmpty && p.forText != r.forText))) {
+          p.status = r.status;
+          p.receiptNo = r.receiptNo;
+          p.confirmedOn = r.confirmedOn;
+          if (r.forText.isNotEmpty) p.forText = r.forText;
+          changed = true;
+        }
+      }
+      final cur = proofs.firstWhere((p) => p.id == r.id);
+      if (cur.status == 'Confirmed' &&
+          cur.receiptNo.isNotEmpty &&
+          !payments.any((x) => x.receiptNo == cur.receiptNo)) {
+        // Confirmed somewhere else: keep a receipt here too and mark the matching due as paid.
+        final due = _firstOpenDue(cur.unit);
+        if (due != null) due.paid = true;
+        final forText = cur.forText.isNotEmpty
+            ? cur.forText
+            : (due == null ? 'Association dues' : (due.isCharge ? due.note : _duesText(due.months)));
+        payments.insert(
+          0,
+          PaymentRecord(
+            nextId(),
+            cur.receiptNo,
+            cur.unit,
+            cur.payer,
+            forText,
+            cur.method,
+            cur.reference.isEmpty ? '—' : cur.reference,
+            cur.confirmedOn.isNotEmpty ? cur.confirmedOn : cur.date,
+            cur.amount,
+          ),
+        );
+        changed = true;
+      }
+    }
+    if (changed) {
+      proofs.sort((a, b) => b.id.compareTo(a.id));
+      _n();
+    }
+  }
+
+  /// Takes the motor parking data (slots, waiting requests, monthly rate) from the shared database.
+  void applyCloudParking(Map<String, String> slotUnits, List<ParkingReq> requests, num? rate) {
+    for (final s in slots) {
+      final u = slotUnits[s.id];
+      if (u != null) s.unit = u;
+    }
+    if (rate != null) motorRate = rate;
+    final inCloud = requests.map((r) => r.unit).toSet();
+    final next = [...requests]..sort((a, b) => a.at.compareTo(b.at));
+    // A request that is no longer waiting was either assigned a slot or declined.
+    for (final r in parking) {
+      if (!inCloud.contains(r.unit) && slotOf(r.unit) != null) {
+        r.confirmed = true;
+        next.add(r);
+      }
+    }
+    parking
+      ..clear()
+      ..addAll(next);
     _n();
   }
 
