@@ -7,11 +7,17 @@ import 'core/core.dart';
 import 'screens/admin/admin_screens.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/resident/resident_screens.dart';
+import 'services/cloud_sync.dart' show cloud;
 
 /// Overall text size. 1.0 is Flutter's default; lower it to make all text smaller.
 const double kTextScale = 0.9;
 
-void main() => runApp(const ResidentHubApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const ResidentHubApp());
+  // Live updates with the website. Does nothing until supabase_config.dart is filled in.
+  cloud.start();
+}
 
 class ResidentHubApp extends StatelessWidget {
   const ResidentHubApp({super.key});

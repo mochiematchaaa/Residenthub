@@ -35,9 +35,55 @@ class PaymentProof {
   final String unit, payer, method, reference, date;
   final num amount;
   String status; // Pending | Confirmed | Rejected
+  String forText, receiptNo, confirmedOn;
+
+  /// True for a payment the office recorded itself (no "I have paid" message from the resident).
+  final bool direct;
   PaymentProof(this.id, this.unit, this.payer, this.method, this.reference,
       this.date, this.amount,
-      {this.status = 'Pending'});
+      {this.status = 'Pending',
+      this.forText = '',
+      this.receiptNo = '',
+      this.confirmedOn = '',
+      this.direct = false});
+
+  /// Shared with the website through the live database (same field names).
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'unit': unit,
+        'payer': payer,
+        'forText': forText,
+        'method': method,
+        'reference': reference,
+        'amount': amount,
+        'date': date,
+        'status': status,
+        'receiptNo': receiptNo,
+        if (confirmedOn.isNotEmpty) 'confirmedOn': confirmedOn,
+        if (direct) 'direct': true,
+      };
+
+  static PaymentProof? fromJson(Map<String, dynamic> j) {
+    final id = j['id'];
+    final amount = j['amount'];
+    if (id is! num) return null;
+    String s(String k) => (j[k] ?? '').toString();
+    final st = s('status');
+    return PaymentProof(
+      id.toInt(),
+      s('unit'),
+      s('payer'),
+      s('method'),
+      s('reference'),
+      s('date'),
+      amount is num ? amount : (num.tryParse(amount.toString()) ?? 0),
+      status: st == 'Confirmed' || st == 'Rejected' ? st : 'Pending',
+      forText: s('forText'),
+      receiptNo: s('receiptNo'),
+      confirmedOn: s('confirmedOn'),
+      direct: j['direct'] == true,
+    );
+  }
 }
 
 /// One receipt as document blocks (shown in the viewer, exported to Word/Excel).

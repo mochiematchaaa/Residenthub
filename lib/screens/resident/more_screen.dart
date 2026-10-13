@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
 import '../../widgets/widgets.dart';
+import '../../services/cloud_sync.dart' show CloudStatusLine;
 import 'resident_screens.dart';
 
 class ResMore extends StatelessWidget {
@@ -16,6 +17,7 @@ class ResMore extends StatelessWidget {
       title: 'More',
       subtitle: 'Everything else for your unit.',
       children: [
+        const CloudStatusLine(),
         RCard(
           onTap: () => go(context, const ResSettings()),
           child: Row(
