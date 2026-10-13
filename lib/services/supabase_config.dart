@@ -12,8 +12,8 @@
 //   --dart-define=SUPABASE_URL=...  --dart-define=SUPABASE_ANON_KEY=...
 // (the GitHub Action reads the repository variables SUPABASE_URL and SUPABASE_ANON_KEY).
 
-const String _urlHere = '';
-const String _keyHere = '';
+const String _urlHere = 'https://iexsitqmmhokmffmmaed.supabase.co';
+const String _keyHere = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlleHNpdHFtbWhva21mZm1tYWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4OTgzNDEsImV4cCI6MjEwNzQ3NDM0MX0.g1-1z0XOp0RpFot_OP06_1_6nPPvueyqArVtP3qYcwc';
 
 const String _urlDefine = String.fromEnvironment('SUPABASE_URL');
 const String _keyDefine = String.fromEnvironment('SUPABASE_ANON_KEY');
