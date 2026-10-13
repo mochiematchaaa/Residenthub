@@ -290,6 +290,37 @@ class ResDues extends StatelessWidget {
                 style: TextStyle(color: muted(context), fontSize: 13, height: 1.45),
               ),
               const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: Text('${app.slots.length - app.slotsUsed} of ${app.slots.length} slots free', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14))),
+                  Text('Green = free · Red = taken', style: TextStyle(color: muted(context), fontSize: 11.5)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              GridView.count(
+                crossAxisCount: 6,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 6,
+                crossAxisSpacing: 6,
+                childAspectRatio: 1.7,
+                children: [
+                  for (final sl in app.slots)
+                    Builder(builder: (context) {
+                      final mine = sl.unit == app.myUnit;
+                      final t = toneOf(context, sl.used ? Tone.bad : Tone.good);
+                      return Container(
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: mine ? lavDeep : t.bg,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(sl.id, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: mine ? Colors.white : t.fg)),
+                      );
+                    }),
+                ],
+              ),
+              const SizedBox(height: 12),
               if (app.slotOf(app.myUnit) != null)
                 Pill('Your slot: ${app.slotOf(app.myUnit)!.id}', tone: Tone.good)
               else if (app.parkingRequested)
