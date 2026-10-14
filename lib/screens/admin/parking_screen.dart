@@ -7,13 +7,18 @@ import '../../widgets/widgets.dart';
 class AdminParking extends StatelessWidget {
   const AdminParking({super.key});
 
-  void _slotSheet(BuildContext context, ParkingSlot s) {
-    if (s.used) {
-      confirmDialog(context, 'Release ${s.id}?', 'Take the slot back from ${s.unit}.', confirm: 'Release', destructive: true).then((ok) {
-        if (ok) app.releaseSlot(s);
-      });
-      return;
-    }
+  void _rename(BuildContext context, ParkingSlot s) {
+    showFormSheet(
+      context,
+      title: 'Rename ${s.id}',
+      subtitle: 'Use the name painted on the parking space, e.g. B1-05. The resident keeps the slot.',
+      fields: [FieldSpec('name', 'Slot name', initial: s.id)],
+      submit: 'Save',
+      onSubmit: (v) => app.renameSlot(s, v['name'] as String),
+    );
+  }
+
+  void _assign(BuildContext context, ParkingSlot s) {
     final unitsList = [for (final u in app.units) if (app.slotOf(u.unit) == null) u.unit];
     if (unitsList.isEmpty) {
       msg(context, 'Every unit already has a slot.');
@@ -29,6 +34,68 @@ class AdminParking extends StatelessWidget {
         app.assignSlot(s, v['unit'] as String);
         return null;
       },
+    );
+  }
+
+  /// Tap a slot: assign or release it, rename it, or remove it.
+  void _slotSheet(BuildContext context, ParkingSlot s) {
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      builder: (sheet) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 14, 12, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Text(s.used ? '${s.id} · ${s.unit}' : '${s.id} · Free', style: hd(20)),
+            ),
+            if (s.used)
+              ListTile(
+                leading: const Icon(Icons.undo_rounded),
+                title: const Text('Release this slot'),
+                subtitle: Text('Take it back from ${s.unit}'),
+                onTap: () async {
+                  Navigator.pop(sheet);
+                  final ok = await confirmDialog(context, 'Release ${s.id}?', 'Take the slot back from ${s.unit}.', confirm: 'Release', destructive: true);
+                  if (ok) app.releaseSlot(s);
+                },
+              )
+            else
+              ListTile(
+                leading: const Icon(Icons.person_add_alt_1_rounded),
+                title: const Text('Assign to a unit'),
+                onTap: () {
+                  Navigator.pop(sheet);
+                  _assign(context, s);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Rename'),
+              onTap: () {
+                Navigator.pop(sheet);
+                _rename(context, s);
+              },
+            ),
+            if (!s.used)
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded, color: danger),
+                title: const Text('Remove slot', style: TextStyle(color: danger)),
+                onTap: () async {
+                  Navigator.pop(sheet);
+                  final ok = await confirmDialog(context, 'Remove ${s.id}?', 'The slot is taken off the parking area. Nobody is using it.',
+                      confirm: 'Remove', destructive: true);
+                  if (!ok || !context.mounted) return;
+                  final err = app.removeSlot(s);
+                  if (err != null) msg(context, err);
+                },
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -103,7 +170,7 @@ class AdminParking extends StatelessWidget {
             if (app.slots.isEmpty)
               const EmptyBox('No slots yet. Tap "Add slots" to set up the parking area.', icon: Icons.local_parking_rounded)
             else
-              Text('Tap a slot to assign or release it.', style: TextStyle(color: muted(context), fontSize: 12.5)),
+              Text('Tap a slot to assign, release, rename or remove it.', style: TextStyle(color: muted(context), fontSize: 12.5)),
             GridView.count(
               crossAxisCount: 4,
               shrinkWrap: true,

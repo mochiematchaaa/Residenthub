@@ -1095,15 +1095,51 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  /// Admin: adds [raw] more motor parking slots (M-01, M-02, ...).
+  /// Admin: adds [raw] more motor parking slots (M-01, M-02, ...). New names never reuse a name that is taken.
   String? addSlots(String raw) {
     final n = int.tryParse(raw.trim());
     if (n == null || n < 1 || n > 200) return 'Enter how many slots to add (1 to 200).';
-    final names = slotNames(slots.length + n).skip(slots.length);
-    for (final id in names) {
-      slots.add(ParkingSlot(id));
+    final taken = {for (final s in slots) s.id};
+    var top = 0;
+    for (final s in slots) {
+      final m = RegExp(r'^M-(\d+)$').firstMatch(s.id);
+      if (m != null) top = top > int.parse(m.group(1)!) ? top : int.parse(m.group(1)!);
     }
+    var added = 0;
+    while (added < n) {
+      top++;
+      final id = 'M-${top.toString().padLeft(2, '0')}';
+      if (taken.add(id)) {
+        slots.add(ParkingSlot(id));
+        added++;
+      }
+    }
+    slots.sort((a, b) => naturalCompare(a.id, b.id));
     logActivity('$n motor parking slot${n == 1 ? '' : 's'} added', 'Parking');
+    _n();
+    return null;
+  }
+
+  /// Admin: gives a slot another name (the resident keeps it).
+  String? renameSlot(ParkingSlot s, String raw) {
+    final name = raw.trim();
+    if (name.isEmpty) return 'Enter a name for the slot.';
+    if (name == s.id) return null;
+    if (slots.any((x) => x != s && x.id.toLowerCase() == name.toLowerCase())) return '$name already exists.';
+    final i = slots.indexOf(s);
+    final renamed = ParkingSlot(name, s.unit);
+    slots[i] = renamed;
+    slots.sort((a, b) => naturalCompare(a.id, b.id));
+    logActivity('Parking slot ${s.id} renamed to $name', 'Parking');
+    _n();
+    return null;
+  }
+
+  /// Admin: takes a free slot off the parking area.
+  String? removeSlot(ParkingSlot s) {
+    if (s.used) return 'Release ${s.id} first, then remove it.';
+    slots.remove(s);
+    logActivity('Parking slot ${s.id} removed', 'Parking');
     _n();
     return null;
   }
