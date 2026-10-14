@@ -37,7 +37,7 @@ class AdminParking extends StatelessWidget {
     );
   }
 
-  /// Tap a slot: assign or release it, rename it, or remove it.
+  /// Tap a slot: assign or release it, rename it, or delete it.
   void _slotSheet(BuildContext context, ParkingSlot s) {
     showModalBottomSheet<void>(
       context: context,
@@ -80,19 +80,23 @@ class AdminParking extends StatelessWidget {
                 _rename(context, s);
               },
             ),
-            if (!s.used)
-              ListTile(
-                leading: const Icon(Icons.delete_outline_rounded, color: danger),
-                title: const Text('Remove slot', style: TextStyle(color: danger)),
-                onTap: () async {
-                  Navigator.pop(sheet);
-                  final ok = await confirmDialog(context, 'Remove ${s.id}?', 'The slot is taken off the parking area. Nobody is using it.',
-                      confirm: 'Remove', destructive: true);
-                  if (!ok || !context.mounted) return;
-                  final err = app.removeSlot(s);
-                  if (err != null) msg(context, err);
-                },
-              ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded, color: danger),
+              title: const Text('Delete slot', style: TextStyle(color: danger)),
+              onTap: () async {
+                Navigator.pop(sheet);
+                final ok = await confirmDialog(
+                  context,
+                  'Delete ${s.id}?',
+                  s.used
+                      ? '${s.id} is assigned to ${s.unit}. Deleting it takes the slot away from them and removes it from the parking area.'
+                      : 'The slot is removed from the parking area. Nobody is using it.',
+                  confirm: 'Delete',
+                  destructive: true,
+                );
+                if (ok) app.removeSlot(s);
+              },
+            ),
           ],
         ),
       ),
@@ -170,7 +174,7 @@ class AdminParking extends StatelessWidget {
             if (app.slots.isEmpty)
               const EmptyBox('No slots yet. Tap "Add slots" to set up the parking area.', icon: Icons.local_parking_rounded)
             else
-              Text('Tap a slot to assign, release, rename or remove it.', style: TextStyle(color: muted(context), fontSize: 12.5)),
+              Text('Tap a slot to assign, release, rename or delete it.', style: TextStyle(color: muted(context), fontSize: 12.5)),
             GridView.count(
               crossAxisCount: 4,
               shrinkWrap: true,

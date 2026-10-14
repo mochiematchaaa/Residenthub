@@ -10,6 +10,7 @@ export 'grievances_screen.dart';
 export 'home_screen.dart';
 export 'more_screen.dart';
 export 'notifications_sheet.dart';
+export 'parking_screen.dart';
 export 'polls_screen.dart';
 export 'reservations_screen.dart';
 export 'resident_shell.dart';

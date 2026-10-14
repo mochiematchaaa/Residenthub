@@ -80,7 +80,7 @@ class ResHome extends StatelessWidget {
           child: PastelCard(
             color: Pastel.lavender,
             padding: const EdgeInsets.all(20),
-            onTap: () => app.setResTab(2),
+            onTap: () => app.setResTab(3),
             child: Row(
               children: [
                 RingGauge(
@@ -104,7 +104,7 @@ class ResHome extends StatelessWidget {
                       Text(app.myUnit, style: const TextStyle(color: inkSoft, fontSize: 12.5, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 12),
                       FilledButton(
-                        onPressed: () => app.setResTab(2),
+                        onPressed: () => app.setResTab(3),
                         style: FilledButton.styleFrom(
                           backgroundColor: ink,
                           foregroundColor: Colors.white,
@@ -135,7 +135,7 @@ class ResHome extends StatelessWidget {
                 FeatureTile(
                   title: 'Book a facility',
                   metric: pendingBk > 0 ? '$pendingBk' : 'Open',
-                  subtitle: pendingBk > 0 ? 'request(s) waiting for approval' : 'Pool and function hall',
+                  subtitle: pendingBk > 0 ? 'request(s) waiting for approval' : 'Pool, hall and more',
                   icon: Icons.pool_rounded,
                   color: Pastel.peach,
                   cta: 'Book now',
@@ -158,6 +158,15 @@ class ResHome extends StatelessWidget {
                   color: Pastel.butter,
                   cta: openGr == 0 ? 'Report one' : 'Track',
                   onTap: () => go(context, const ResGrievances()),
+                ),
+                FeatureTile(
+                  title: 'Motor parking',
+                  metric: app.slotOf(app.myUnit)?.id ?? (app.parkingRequested ? 'Pending' : 'None'),
+                  subtitle: app.slotOf(app.myUnit) != null ? 'is your parking slot' : (app.parkingRequested ? 'request waiting for the office' : 'Request a slot for your motorcycle'),
+                  icon: Icons.two_wheeler_rounded,
+                  color: Pastel.mint,
+                  cta: app.slotOf(app.myUnit) != null ? 'View' : 'Open',
+                  onTap: () => app.setResTab(2),
                 ),
                 FeatureTile(
                   title: 'Unit Rental',
@@ -320,8 +329,9 @@ class ResHome extends StatelessWidget {
 
   List<SearchItem> _searchItems(BuildContext context) => [
         SearchItem('Calendar', 'Events, bookings and due dates', Icons.calendar_month_rounded, () => go(context, const CalendarScreen(admin: false))),
-        SearchItem('Book a facility', 'Swimming pool, function hall', Icons.pool_rounded, () => app.setResTab(1)),
-        SearchItem('Dues & payment', 'Balance, history, motor parking', Icons.account_balance_wallet_rounded, () => app.setResTab(2)),
+        SearchItem('Book a facility', 'Pool, function hall and other amenities', Icons.pool_rounded, () => app.setResTab(1)),
+        SearchItem('Dues & payment', 'Balance, payments and receipts', Icons.account_balance_wallet_rounded, () => app.setResTab(3)),
+        SearchItem('Motor parking', 'Your slot, request and free slots', Icons.two_wheeler_rounded, () => app.setResTab(2)),
         SearchItem('My reservations', 'Booking requests and status', Icons.event_note_rounded, () => go(context, const ResReservations())),
         SearchItem('Grievances', 'Report or track a concern', Icons.edit_note_rounded, () => go(context, const ResGrievances())),
         SearchItem('Polls & voting', 'Vote on community decisions', Icons.how_to_vote_outlined, () => go(context, const ResPolls())),

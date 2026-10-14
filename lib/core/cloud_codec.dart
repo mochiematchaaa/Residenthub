@@ -88,6 +88,7 @@ Map<String, dynamic> _unitJson(Unit u) => {
       'statusDate': u.statusDate,
       'usageStatus': u.usageStatus,
       'usageRemark': u.usageRemark,
+      'usageInfo': {for (final e in u.usageInfo.entries) e.key: e.key == 'agree' ? e.value == 'true' : e.value},
     };
 
 Unit? _unitFrom(Map<String, dynamic> j) {
@@ -98,7 +99,12 @@ Unit? _unitFrom(Map<String, dynamic> j) {
       statusNote: _s(j, 'statusNote'),
       statusDate: _s(j, 'statusDate'),
       usageStatus: _s(j, 'usageStatus'),
-      usageRemark: _s(j, 'usageRemark'));
+      usageRemark: _s(j, 'usageRemark'),
+      usageInfo: {
+        if (j['usageInfo'] is Map)
+          for (final e in (j['usageInfo'] as Map).entries)
+            if (e.value != null && e.value.toString().isNotEmpty && e.value != false) e.key.toString(): e.value.toString(),
+      });
 }
 
 Map<String, dynamic> _updateJson(StatusUpdate s) =>
