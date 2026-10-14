@@ -1,5 +1,11 @@
 // Verifies a new resident's email address and mobile number.
 //
+// The resident picks ONE way to confirm: channel "sms" (text message through Twilio) or channel "email" (Gmail/SMTP).
+// action "options": { }                       - which ways are set up, and where a code would go (masked)
+// action "send":    { channel }                - sends one code by that way
+// action "check":   { channel, code }          - checks it
+// Without a channel the old behaviour is kept (both codes, used by the older app): send, then check with emailCode + smsCode.
+//
 // action "send":  emails one 6-digit code and texts another to the numbers on the account.
 // action "check": { emailCode, smsCode } - when both are right the account is marked verified
 //                 (profiles.contact_verified_at). Until then the database shows the resident nothing.
@@ -59,6 +65,24 @@ function maskPhone(p: string): string {
   return `${p.slice(0, 5)}${"*".repeat(Math.max(1, p.length - 8))}${p.slice(-3)}`;
 }
 
+function emailReady(): boolean {
+  return !!(Deno.env.get("SMTP_HOST") && Deno.env.get("SMTP_USER") && Deno.env.get("SMTP_PASS"));
+}
+function smsProvider(): string {
+  const p = (Deno.env.get("SMS_PROVIDER") ?? "").toLowerCase();
+  if (p) return p;
+  return Deno.env.get("TWILIO_ACCOUNT_SID") ? "twilio" : "";
+}
+function smsReady(): boolean {
+  const p = smsProvider();
+  if (p === "twilio") {
+    return !!(Deno.env.get("TWILIO_ACCOUNT_SID") && Deno.env.get("TWILIO_AUTH_TOKEN") &&
+      (Deno.env.get("TWILIO_FROM") || Deno.env.get("TWILIO_MESSAGING_SERVICE_SID")));
+  }
+  if (p === "semaphore") return !!Deno.env.get("SEMAPHORE_API_KEY");
+  return false;
+}
+
 async function sendEmail(to: string, code: string) {
   const host = Deno.env.get("SMTP_HOST"), user = Deno.env.get("SMTP_USER"), pass = Deno.env.get("SMTP_PASS");
   if (!host || !user || !pass) throw new Error("Email sending is not set up yet. Please tell the administrator.");
@@ -78,7 +102,7 @@ async function sendEmail(to: string, code: string) {
 
 async function sendSms(to: string, code: string) {
   const text = `ResidentHub: your verification code is ${code}. It expires in ${CODE_MINUTES} minutes. Do not share it.`;
-  const provider = (Deno.env.get("SMS_PROVIDER") ?? "").toLowerCase();
+  const provider = smsProvider();
   if (provider === "twilio") {
     const sid = Deno.env.get("TWILIO_ACCOUNT_SID"), token = Deno.env.get("TWILIO_AUTH_TOKEN");
     const from = Deno.env.get("TWILIO_FROM"), svc = Deno.env.get("TWILIO_MESSAGING_SERVICE_SID");
@@ -137,17 +161,30 @@ Deno.serve(async (req: Request) => {
     const phone = normalizePhone(me.phone ?? "");
     const email = String(me.email ?? "");
 
+    if (action === "options") {
+      return reply({
+        ok: true,
+        email: email ? maskEmail(email) : "",
+        phone: phone ? maskPhone(phone) : "",
+        emailReady: emailReady() && !!email,
+        smsReady: smsReady() && !!phone,
+      });
+    }
+
+    const channel = String(body.channel ?? "");
     if (action === "send") {
-      if (!phone) return reply({ error: "The mobile number on this account is not valid. Ask the administrator to fix it." }, 400);
-      if (!email) return reply({ error: "This account has no email address." }, 400);
+      const useEmail = channel !== "sms", useSms = channel !== "email"; // no channel = both (older app)
+      if (channel && channel !== "email" && channel !== "sms") return reply({ error: "Choose email or text message." }, 400);
+      if (useSms && !phone) return reply({ error: "The mobile number on this account is not valid. Ask the administrator to fix it." }, 400);
+      if (useEmail && !email) return reply({ error: "This account has no email address." }, 400);
 
       const now = Date.now();
       const { data: rows } = await admin.from("verification_codes").select("*").eq("user_id", uid);
-      const prev = (rows ?? []).find((r) => r.channel === "email");
+      const prev = (rows ?? []).find((r) => r.channel === (useEmail ? "email" : "sms"));
       if (prev) {
         const since = (now - new Date(prev.sent_at).getTime()) / 1000;
         if (since < COOLDOWN_SECONDS) {
-          return reply({ error: `Please wait ${Math.ceil(COOLDOWN_SECONDS - since)} seconds before asking for new codes.` }, 429);
+          return reply({ error: `Please wait ${Math.ceil(COOLDOWN_SECONDS - since)} seconds before asking for a new code.` }, 429);
         }
       }
       const windowStart = prev && now - new Date(prev.window_start).getTime() < 3600_000 ? new Date(prev.window_start) : new Date(now);
@@ -156,18 +193,40 @@ Deno.serve(async (req: Request) => {
 
       const emailCode = newCode(), smsCode = newCode();
       const errors: string[] = [];
-      try { await sendEmail(email, emailCode); } catch (e) { errors.push((e as Error).message); }
-      try { await sendSms(phone, smsCode); } catch (e) { errors.push((e as Error).message); }
+      if (useEmail) { try { await sendEmail(email, emailCode); } catch (e) { errors.push((e as Error).message); } }
+      if (useSms) { try { await sendSms(phone!, smsCode); } catch (e) { errors.push((e as Error).message); } }
       if (errors.length) return reply({ error: errors.join(" ") }, 502);
 
       const expires = new Date(now + CODE_MINUTES * 60_000).toISOString();
       const common = { user_id: uid, expires_at: expires, attempts: 0, sent_at: new Date(now).toISOString(), window_start: windowStart.toISOString(), sends: sends + 1 };
-      const { error } = await admin.from("verification_codes").upsert([
-        { ...common, channel: "email", code_hash: await hash(uid, "email", emailCode) },
-        { ...common, channel: "sms", code_hash: await hash(uid, "sms", smsCode) },
-      ]);
-      if (error) return reply({ error: "Could not save the codes. Try again." }, 500);
-      return reply({ ok: true, email: maskEmail(email), phone: maskPhone(phone), cooldown: COOLDOWN_SECONDS });
+      const out: Record<string, unknown>[] = [];
+      if (useEmail) out.push({ ...common, channel: "email", code_hash: await hash(uid, "email", emailCode) });
+      if (useSms) out.push({ ...common, channel: "sms", code_hash: await hash(uid, "sms", smsCode) });
+      if (channel) await admin.from("verification_codes").delete().eq("user_id", uid).eq("channel", channel === "email" ? "sms" : "email");
+      const { error } = await admin.from("verification_codes").upsert(out);
+      if (error) return reply({ error: "Could not save the code. Try again." }, 500);
+      return reply({
+        ok: true, channel: channel || "both", cooldown: COOLDOWN_SECONDS,
+        ...(useEmail ? { email: maskEmail(email) } : {}), ...(useSms ? { phone: maskPhone(phone!) } : {}),
+      });
+    }
+
+    if (action === "check" && (channel === "email" || channel === "sms")) {
+      const code = String(body.code ?? "").trim();
+      if (!/^\d{6}$/.test(code)) return reply({ error: "Enter the 6-digit code." }, 400);
+      const { data: rows } = await admin.from("verification_codes").select("*").eq("user_id", uid);
+      const row = (rows ?? []).find((r) => r.channel === channel);
+      if (!row) return reply({ error: "Ask for a new code first." }, 400);
+      if (new Date(row.expires_at).getTime() < Date.now()) return reply({ error: "The code expired. Ask for a new code." }, 400);
+      if (row.attempts >= MAX_ATTEMPTS) return reply({ error: "Too many wrong tries. Ask for a new code." }, 429);
+      if ((await hash(uid, channel, code)) !== row.code_hash) {
+        await admin.from("verification_codes").update({ attempts: row.attempts + 1 }).eq("user_id", uid).eq("channel", channel);
+        return reply({ error: "That code is not correct." }, 400);
+      }
+      const { error } = await admin.from("profiles").update({ contact_verified_at: new Date().toISOString() }).eq("id", uid);
+      if (error) return reply({ error: "Could not finish. Try again." }, 500);
+      await admin.from("verification_codes").delete().eq("user_id", uid);
+      return reply({ ok: true, verified: true });
     }
 
     if (action === "check") {
