@@ -154,7 +154,7 @@ Deno.serve(async (req: Request) => {
       .eq("email", email)
       .maybeSingle();
     const phone = p ? normalizePhone(p.phone ?? "") : null;
-    const eligible = !!p && !p.suspended && !!phone && (p.role === "admin" || !!p.contact_verified_at);
+    const eligible = !!p && !p.suspended && (p.role === "admin" || !!p.contact_verified_at);
 
     if (action === "request") {
       if (!eligible || !p) return reply({ ok: true, message: SAME_ANSWER, cooldown: COOLDOWN_SECONDS });
@@ -172,6 +172,7 @@ Deno.serve(async (req: Request) => {
 
       if (channel && channel !== "email" && channel !== "sms") return reply({ error: "Choose email or text message." }, 400);
       const useEmail = channel !== "sms", useSms = channel !== "email"; // no channel = both (older app)
+      if (useSms && !phone) return reply({ ok: true, message: SAME_ANSWER, cooldown: COOLDOWN_SECONDS }); // no mobile number on file
       const emailCode = newCode(), smsCode = newCode();
       let failed = false;
       if (useEmail) { try { await sendEmail(email, emailCode); } catch (_) { failed = true; } }
