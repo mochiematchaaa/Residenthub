@@ -27,17 +27,41 @@ class AdminParking extends StatelessWidget {
     showFormSheet(
       context,
       title: 'Assign ${s.id}',
-      subtitle: 'Choose the unit that gets this slot.',
-      choices: [ChoiceSpec('unit', 'Unit', unitsList, unitsList.first)],
+      subtitle: 'Choose the unit that gets this slot and how long it rents it.',
+      choices: [
+        ChoiceSpec('unit', 'Unit', unitsList, unitsList.first),
+        const ChoiceSpec('plan', 'Rental', ['Monthly (1 month)', 'Daily (by the day)'], 'Monthly (1 month)'),
+      ],
+      fields: const [
+        FieldSpec('days', 'Number of days', type: TextInputType.number, initial: '1', onlyWhenKey: 'plan', onlyWhenValue: 'Daily (by the day)'),
+      ],
       submit: 'Assign slot',
       onSubmit: (v) {
-        app.assignSlot(s, v['unit'] as String);
+        final daily = v['plan'] == 'Daily (by the day)';
+        final days = int.tryParse('${v['days'] ?? ''}'.trim()) ?? 0;
+        if (daily && (days < 1 || days > 365)) return 'Enter 1 to 365 days.';
+        app.assignSlot(s, v['unit'] as String, plan: daily ? 'day' : 'month', days: days);
         return null;
       },
     );
   }
 
-  /// Tap a slot: assign or release it, rename it, or delete it.
+  /// Takes the resident off a slot after the admin confirms. The rental ends and the slot is free.
+  Future<void> _remove(BuildContext context, ParkingSlot s) async {
+    final unit = s.unit;
+    final ok = await confirmDialog(
+      context,
+      'Remove $unit from ${s.id}?',
+      'The ${s.daily ? 'daily' : 'monthly'} rental ends now and ${s.id} becomes free for other residents. Nothing is refunded automatically.',
+      confirm: 'Remove',
+      destructive: true,
+    );
+    if (!ok || !context.mounted) return;
+    app.releaseSlot(s);
+    msg(context, '$unit removed. ${s.id} is free.');
+  }
+
+  /// Tap a slot: assign it or remove the resident, rename it, or delete it.
   void _slotSheet(BuildContext context, ParkingSlot s) {
     showModalBottomSheet<void>(
       context: context,
@@ -53,14 +77,18 @@ class AdminParking extends StatelessWidget {
               child: Text(s.used ? '${s.id} · ${s.unit}' : '${s.id} · Free', style: hd(20)),
             ),
             if (s.used)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                child: Text('${s.rentalLine}${s.ended ? ' (ended)' : ''}${s.amount > 0 ? ' · ${peso(s.amount)}' : ''}', style: TextStyle(color: muted(context), fontSize: 12.5)),
+              ),
+            if (s.used)
               ListTile(
-                leading: const Icon(Icons.undo_rounded),
-                title: const Text('Release this slot'),
-                subtitle: Text('Take it back from ${s.unit}'),
-                onTap: () async {
+                leading: const Icon(Icons.person_remove_alt_1_rounded, color: danger),
+                title: const Text('Remove resident', style: TextStyle(color: danger)),
+                subtitle: Text('End ${s.unit}\'s rental and free the slot'),
+                onTap: () {
                   Navigator.pop(sheet);
-                  final ok = await confirmDialog(context, 'Release ${s.id}?', 'Take the slot back from ${s.unit}.', confirm: 'Release', destructive: true);
-                  if (ok) app.releaseSlot(s);
+                  _remove(context, s);
                 },
               )
             else
@@ -157,7 +185,7 @@ class AdminParking extends StatelessWidget {
           Text('${p.unit} · ${p.name}', style: const TextStyle(fontWeight: FontWeight.w700)),
           Text(
             p.slot.isNotEmpty
-                ? 'Slot ${p.slot}${p.amount > 0 ? ' · ${peso(p.amount)} a month' : ''}'
+                ? 'Slot ${p.slot}${p.amount > 0 ? ' · ${peso(p.amount)}' : ''} · ${parkPlanText(p.plan, p.days)}'
                 : (app.freeSlot == null ? 'No free slot right now' : 'Next free slot: ${app.freeSlot!.id}'),
             style: TextStyle(color: muted(context), fontSize: 12.5),
           ),
@@ -188,7 +216,7 @@ class AdminParking extends StatelessWidget {
                 ['In use', '${app.slotsUsed}'],
                 ['Free', '$free'],
                 ['Waiting', '${waiting.length}'],
-                ['Rate', peso(app.motorRate)],
+                ['Monthly', peso(app.motorRate)],
               ]),
             ),
             Text('Requests', style: hd(18)),
@@ -254,9 +282,46 @@ class AdminParking extends StatelessWidget {
                   }),
               ],
             ),
+            Text('Current rentals', style: hd(18)),
+            if (app.slots.where((s) => s.used).isEmpty)
+              const EmptyBox('No slot is rented yet.', icon: Icons.two_wheeler_outlined)
+            else
+              RCard(
+                child: Column(
+                  children: [
+                    for (final s in (app.slots.where((s) => s.used).toList()..sort((a, b) => naturalCompare(a.unit, b.unit))))
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('${s.unit} · ${s.id}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                                  Text(
+                                    s.until.isEmpty ? '${s.daily ? 'Daily' : 'Monthly'} · no end date' : '${s.daily ? 'Daily' : 'Monthly'} · ${isoShort(s.from)} – ${isoShort(s.until)}',
+                                    style: TextStyle(color: muted(context), fontSize: 12.5),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  s.ended ? const Pill('Ended', tone: Tone.bad) : const Pill('Active', tone: Tone.good),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              style: TextButton.styleFrom(foregroundColor: danger),
+                              onPressed: () => _remove(context, s),
+                              child: const Text('Remove'),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             RCard(
               child: Text(
-                'Change the monthly rate under Finance. Residents request a slot from their Dues page.',
+                'Change the monthly and daily rates under Finance. Residents reserve a slot from their Parking page.',
                 style: TextStyle(color: muted(context), fontSize: 12.5, height: 1.4),
               ),
             ),

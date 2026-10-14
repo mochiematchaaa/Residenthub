@@ -179,11 +179,15 @@ class ParkingReq {
   final String slot;
   final num amount;
 
+  /// 'month' or 'day', and the number of days for a daily rental (0 for monthly).
+  final String plan;
+  final int days;
+
   /// Shown to the administrator ("Just now", "2 days ago") and used to keep requests in order.
   final String when;
   final int at;
   ParkingReq(this.unit, this.name,
-      {this.confirmed = false, this.when = 'Just now', int? at, this.slot = '', this.amount = 0})
+      {this.confirmed = false, this.when = 'Just now', int? at, this.slot = '', this.amount = 0, this.plan = 'month', this.days = 0})
       : at = at ?? DateTime.now().millisecondsSinceEpoch;
 }
 
@@ -394,6 +398,7 @@ class AppState extends ChangeNotifier {
     bookings.clear();
     dues.clear();
     motorRate = 0;
+    motorRateDay = 0;
     duesRate = 0;
     parking.clear();
     slots.clear();
@@ -540,6 +545,9 @@ class AppState extends ChangeNotifier {
 
   final List<Due> dues = [];
   num motorRate = 0;
+
+  /// Daily parking rate (per day). 0 means the daily option is not offered.
+  num motorRateDay = 0;
 
   /// What one unit pays each month in association dues (set by the administrator).
   num duesRate = 0;
@@ -1096,6 +1104,27 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  String? setDailyRate(String raw) {
+    final n = double.tryParse(raw.trim());
+    if (n == null || n < 0) return 'Enter a valid amount before updating the rate.';
+    motorRateDay = n;
+    _n();
+    return null;
+  }
+
+  /// What a rental costs: the monthly rate, or the daily rate times [days].
+  num parkAmount(String plan, int days) => plan == 'day' ? motorRateDay * (days < 1 ? 1 : days) : motorRate;
+
+  /// Writes a rental on a slot: who has it, the plan, the dates and the charge.
+  void _stamp(ParkingSlot s, String unit, String plan, int days, num amount) {
+    final now = DateTime.now();
+    s.unit = unit;
+    s.plan = plan == 'day' ? 'day' : 'month';
+    s.from = isoDay(now);
+    s.until = parkUntil(s.plan, days, now);
+    s.amount = amount;
+  }
+
   /// Gives the first free slot to a parking request. Returns an error message or null.
   String? assignRequest(ParkingReq p) {
     ParkingSlot? free;
@@ -1107,9 +1136,9 @@ class AppState extends ChangeNotifier {
       free = freeSlot;
     }
     if (free == null) return 'There are no free slots right now.';
-    free.unit = p.unit;
+    _stamp(free, p.unit, p.plan, p.days, p.amount);
     p.confirmed = true;
-    logActivity('Parking slot ${free.id} assigned to ${p.unit}', 'Parking');
+    logActivity('Parking slot ${free.id} assigned to ${p.unit} (${parkPlanText(p.plan, p.days)})', 'Parking');
     _n();
     return null;
   }
@@ -1157,13 +1186,17 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  /// Resident: picks a free slot. The slot is held and the monthly rental becomes a charge.
-  String? reserveSlot(String id) {
+  /// Resident: picks a free slot. The slot is held and the rental becomes a charge.
+  String? reserveSlot(String id, {String plan = 'month', int days = 0}) {
     if (myParkingReq != null || slotOf(myUnit) != null) return 'You already have a parking slot or reservation.';
     final s = slots.where((x) => x.id == id).firstOrNull;
     if (s == null || s.used || heldSlots.containsKey(id)) return 'That slot was just taken. Please pick another.';
-    parking.add(ParkingReq(myUnit, myHousehold, slot: id, amount: motorRate));
-    logActivity('Motor parking slot $id reserved, $myUnit', 'Parking');
+    final daily = plan == 'day';
+    if (daily && motorRateDay <= 0) return 'Daily rental is not available yet.';
+    if (daily && (days < 1 || days > 365)) return 'Enter 1 to 365 days.';
+    final d = daily ? days : 0;
+    parking.add(ParkingReq(myUnit, myHousehold, slot: id, amount: parkAmount(plan, d), plan: daily ? 'day' : 'month', days: d));
+    logActivity('Motor parking slot $id reserved (${parkPlanText(daily ? 'day' : 'month', d)}), $myUnit', 'Parking');
     _n();
     return null;
   }
@@ -1227,7 +1260,7 @@ class AppState extends ChangeNotifier {
     if (name == s.id) return null;
     if (slots.any((x) => x != s && x.id.toLowerCase() == name.toLowerCase())) return '$name already exists.';
     final i = slots.indexOf(s);
-    final renamed = ParkingSlot(name, s.unit);
+    final renamed = ParkingSlot(name, s.unit, s.plan, s.from, s.until, s.amount);
     slots[i] = renamed;
     slots.sort((a, b) => naturalCompare(a.id, b.id));
     logActivity('Parking slot ${s.id} renamed to $name', 'Parking');
@@ -1256,18 +1289,27 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  void assignSlot(ParkingSlot s, String unit) {
-    s.unit = unit;
+  void assignSlot(ParkingSlot s, String unit, {String plan = 'month', int days = 1}) {
+    final d = plan == 'day' ? (days < 1 ? 1 : days) : 0;
+    _stamp(s, unit, plan, d, parkAmount(plan, d));
     for (final r in parking.where((r) => r.unit == unit)) {
       r.confirmed = true;
     }
-    logActivity('Parking slot ${s.id} assigned to $unit', 'Parking');
+    logActivity('Parking slot ${s.id} assigned to $unit (${parkPlanText(s.plan, d)})', 'Parking');
     _n();
   }
 
+  /// Admin: ends a rental. The resident is taken off the slot and it is free again.
   void releaseSlot(ParkingSlot s) {
-    logActivity('Parking slot ${s.id} released from ${s.unit}', 'Parking');
-    s.unit = '';
+    final unit = s.unit;
+    s
+      ..unit = ''
+      ..plan = 'month'
+      ..from = ''
+      ..until = ''
+      ..amount = 0;
+    if (unit.isNotEmpty) parking.removeWhere((r) => r.unit == unit);
+    logActivity('Parking rental ended: $unit removed from ${s.id}', 'Parking');
     _n();
   }
 

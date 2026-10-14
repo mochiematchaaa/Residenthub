@@ -254,21 +254,22 @@ DocItem? _docFrom(Map<String, dynamic> j) {
       id: id);
 }
 
-Map<String, dynamic> _slotJson(ParkingSlot s) => {'id': s.id, 'unit': s.unit};
+Map<String, dynamic> _slotJson(ParkingSlot s) =>
+    {'id': s.id, 'unit': s.unit, 'plan': s.plan, 'from': s.from, 'until': s.until, 'amount': s.amount};
 
 ParkingSlot? _slotFrom(Map<String, dynamic> j) {
   final id = _s(j, 'id');
-  return id.isEmpty ? null : ParkingSlot(id, _s(j, 'unit'));
+  return id.isEmpty ? null : ParkingSlot(id, _s(j, 'unit'), _s(j, 'plan', 'month') == 'day' ? 'day' : 'month', _s(j, 'from'), _s(j, 'until'), _num(j, 'amount'));
 }
 
 Map<String, dynamic> _requestJson(ParkingReq r) =>
-    {'unit': r.unit, 'who': r.name, 'when': r.when, 'at': r.at, 'confirmed': r.confirmed, 'slot': r.slot, 'amount': r.amount};
+    {'unit': r.unit, 'who': r.name, 'when': r.when, 'at': r.at, 'confirmed': r.confirmed, 'slot': r.slot, 'amount': r.amount, 'plan': r.plan, 'days': r.days};
 
 ParkingReq? _requestFrom(Map<String, dynamic> j) {
   final unit = _s(j, 'unit');
   if (unit.isEmpty) return null;
   return ParkingReq(unit, _s(j, 'who'),
-      confirmed: _b(j, 'confirmed'), when: _s(j, 'when', 'Just now'), at: _i(j, 'at'), slot: _s(j, 'slot'), amount: _num(j, 'amount'));
+      confirmed: _b(j, 'confirmed'), when: _s(j, 'when', 'Just now'), at: _i(j, 'at'), slot: _s(j, 'slot'), amount: _num(j, 'amount'), plan: _s(j, 'plan', 'month') == 'day' ? 'day' : 'month', days: _i(j, 'days'));
 }
 
 Map<String, dynamic> _paymentJson(PaymentRecord p) => {
@@ -394,6 +395,7 @@ List<CRow> exportRows(AppState a) {
     add('slot', s.id, '', _slotJson(s));
   }
   add('setting', 'motor_rate', '', {'rate': a.motorRate});
+  add('setting', 'motor_rate_daily', '', {'rate': a.motorRateDay});
   add('setting', 'dues_rate', '', {'rate': a.duesRate});
   add('setting', 'paymethods', '', {
     'list': [
@@ -530,6 +532,7 @@ void importRows(AppState a, Iterable<CRow> all) {
   // settings
   final st = {for (final r in of('setting')) r.id: r.value};
   a.motorRate = _num(st['motor_rate'] ?? const {}, 'rate');
+  a.motorRateDay = _num(st['motor_rate_daily'] ?? const {}, 'rate');
   a.duesRate = _num(st['dues_rate'] ?? const {}, 'rate');
   final pm = st['paymethods']?['list'];
   for (final m in a.payMethods) {
