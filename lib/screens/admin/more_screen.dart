@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../core/core.dart';
 import '../../services/session.dart';
 import '../../widgets/widgets.dart';
-import '../../services/cloud_sync.dart' show CloudStatusLine;
 import 'admin_screens.dart';
 
 class AdminMore extends StatelessWidget {
@@ -15,7 +14,6 @@ class AdminMore extends StatelessWidget {
       title: 'More',
       subtitle: 'Community tools and administration.',
       children: [
-        const CloudStatusLine(),
         RCard(
           onTap: () => go(context, const AdminSettings()),
           child: Row(
