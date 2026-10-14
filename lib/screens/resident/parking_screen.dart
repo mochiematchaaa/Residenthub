@@ -38,18 +38,33 @@ class ResParking extends StatelessWidget {
   final bool tab;
   const ResParking({super.key, this.tab = false});
 
-  Future<void> _reserve(BuildContext context, ParkingSlot s) async {
-    final ok = await confirmDialog(
+  void _reserve(BuildContext context, ParkingSlot s) {
+    final monthLabel = 'Monthly (1 month)${app.motorRate > 0 ? ' · ${peso(app.motorRate)}' : ''}';
+    final dayLabel = 'Daily · ${peso(app.motorRateDay)} per day';
+    final hasDaily = app.motorRateDay > 0;
+    final options = [if (app.motorRate > 0 || !hasDaily) monthLabel, if (hasDaily) dayLabel];
+    showFormSheet(
       context,
-      'Reserve ${s.id}?',
-      app.motorRate > 0
-          ? 'The monthly rental is ${peso(app.motorRate)}. The slot is held for you. Pay the rental and send the payment details, then the office approves it.'
-          : 'The office will review your request.',
-      confirm: 'Reserve ${s.id}',
+      title: 'Reserve ${s.id}',
+      subtitle: 'Choose how long you will rent it. The slot is held for you. Pay the rental and send the payment details, then the office approves it.',
+      choices: [ChoiceSpec('plan', 'Rental', options, options.first)],
+      fields: [
+        if (hasDaily) FieldSpec('days', 'Number of days', type: TextInputType.number, initial: '1', onlyWhenKey: 'plan', onlyWhenValue: dayLabel),
+      ],
+      submit: 'Reserve ${s.id}',
+      onSubmit: (v) {
+        final daily = v['plan'] == dayLabel;
+        final days = int.tryParse('${v['days'] ?? ''}'.trim()) ?? 0;
+        final err = app.reserveSlot(s.id, plan: daily ? 'day' : 'month', days: days);
+        if (err == null) {
+          final amount = app.myParkingReq?.amount ?? 0;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (context.mounted) msg(context, amount > 0 ? 'Reserved. Pay ${peso(amount)} to finish.' : 'Request sent to the administrator.');
+          });
+        }
+        return err;
+      },
     );
-    if (!ok || !context.mounted) return;
-    final err = app.reserveSlot(s.id);
-    msg(context, err ?? (app.motorRate > 0 ? 'Reserved. Pay ${peso(app.motorRate)} to finish.' : 'Request sent to the administrator.'));
   }
 
   Widget _step(String label, {required bool done, required bool current, required String n}) {
@@ -87,6 +102,7 @@ class ResParking extends StatelessWidget {
         final canPick = mine == null && req == null && app.slots.isNotEmpty;
         final cs = Theme.of(context).colorScheme;
         final rate = app.motorRate;
+        final rateDay = app.motorRateDay;
         final kids = <Widget>[
           PastelCard(
             color: mine != null ? Pastel.mint : (req != null ? Pastel.butter : Pastel.sky),
@@ -115,9 +131,13 @@ class ResParking extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 if (mine != null)
-                  Text('Assigned to ${app.myUnit}.${rate > 0 ? ' Rental: ${peso(rate)} per month.' : ''}', style: const TextStyle(color: inkSoft, height: 1.4))
+                  Text(
+                    'Assigned to ${app.myUnit}. ${mine.rentalLine}${mine.amount > 0 ? ' · ${peso(mine.amount)}' : ''}.'
+                    '${mine.ended ? ' This rental has ended. Please contact the office to renew or free the slot.' : ''}',
+                    style: const TextStyle(color: inkSoft, height: 1.4),
+                  )
                 else if (picked) ...[
-                  Text(req.amount > 0 ? 'Charge: ${peso(req.amount)} per month' : 'No rate set yet', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text(req.amount > 0 ? 'Charge: ${peso(req.amount)} · ${parkPlanText(req.plan, req.days)}' : 'No rate set yet', style: const TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -172,7 +192,7 @@ class ResParking extends StatelessWidget {
                   Text(
                     app.slots.isEmpty
                         ? 'The office has not set up the parking slots yet. You can still send a request.'
-                        : 'Tap a free slot on the map to reserve it.${rate > 0 ? ' Rental: ${peso(rate)} per month, paid before the office approves.' : ''}',
+                        : 'Tap a free slot on the map to reserve it.${rate > 0 || rateDay > 0 ? ' Rent it ${rate > 0 ? 'by the month (${peso(rate)})' : ''}${rate > 0 && rateDay > 0 ? ' or ' : ''}${rateDay > 0 ? 'by the day (${peso(rateDay)})' : ''}, paid before the office approves.' : ''}',
                     style: const TextStyle(color: inkSoft, height: 1.4),
                   ),
                   if (app.slots.isEmpty) ...[
@@ -253,7 +273,7 @@ class ResParking extends StatelessWidget {
                 const SizedBox(height: 8),
                 for (final line in [
                   'Tap a free slot on the map. The slot is held for you.',
-                  'The monthly rental${rate > 0 ? ' (${peso(rate)})' : ''} shows up as a charge. Pay it, then send the payment details.',
+                  'You choose a monthly or daily rental, and it shows up as a charge. Pay it, then send the payment details.',
                   'When the office confirms your payment, the slot is yours. Your receipt appears under Dues.',
                 ])
                   Padding(

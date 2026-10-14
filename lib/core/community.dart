@@ -23,9 +23,42 @@ class Poll {
 class ParkingSlot {
   final String id;
   String unit;
-  ParkingSlot(this.id, [this.unit = '']);
+
+  /// How the slot is rented: 'month' (one month) or 'day' (by the day). [from] and [until] are
+  /// yyyy-mm-dd, [amount] is what was charged. Slots given before plans existed have no dates.
+  String plan, from, until;
+  num amount;
+  ParkingSlot(this.id, [this.unit = '', this.plan = 'month', this.from = '', this.until = '', this.amount = 0]);
   bool get used => unit.isNotEmpty;
+  bool get daily => plan == 'day';
+
+  /// True once the last day of the rental has passed.
+  bool get ended => used && until.isNotEmpty && until.compareTo(isoDay(DateTime.now())) < 0;
+
+  /// "Monthly · until Nov 13, 2026"
+  String get rentalLine => !used ? '' : '${daily ? 'Daily' : 'Monthly'}${until.isEmpty ? '' : ' · until ${isoShort(until)}'}';
 }
+
+String isoDay(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+/// "2026-11-13" as "Nov 13, 2026" (unchanged when it is not a date).
+String isoShort(String iso) {
+  final d = DateTime.tryParse(iso);
+  if (d == null) return iso;
+  const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return '${m[d.month - 1]} ${d.day}, ${d.year}';
+}
+
+/// The last day of a rental that starts on [from]: one month later (minus a day), or [days] days.
+String parkUntil(String plan, int days, DateTime from) {
+  if (plan == 'day') return isoDay(DateTime(from.year, from.month, from.day + (days < 1 ? 1 : days) - 1));
+  final lastOfNext = DateTime(from.year, from.month + 2, 0).day;
+  final next = DateTime(from.year, from.month + 1, from.day > lastOfNext ? lastOfNext : from.day);
+  return isoDay(DateTime(next.year, next.month, next.day - 1));
+}
+
+String parkPlanText(String plan, int days) =>
+    plan == 'day' ? 'Daily${days > 0 ? ' · $days day${days == 1 ? '' : 's'}' : ''}' : 'Monthly';
 
 /// Slot names for a motor parking area with [n] slots: M-01, M-02, ...
 List<String> slotNames(int n) => [for (var i = 1; i <= n; i++) 'M-${i.toString().padLeft(2, '0')}'];

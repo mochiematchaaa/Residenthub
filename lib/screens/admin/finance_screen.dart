@@ -18,11 +18,13 @@ class AdminFinance extends StatefulWidget {
 class _AdminFinanceState extends State<AdminFinance> {
   String filter = 'Unpaid';
   late final rate = TextEditingController(text: app.motorRate.toStringAsFixed(0));
+  late final rateDay = TextEditingController(text: app.motorRateDay == 0 ? '' : app.motorRateDay.toStringAsFixed(0));
   late final duesRate = TextEditingController(text: app.duesRate == 0 ? '' : app.duesRate.toStringAsFixed(0));
 
   @override
   void dispose() {
     rate.dispose();
+    rateDay.dispose();
     duesRate.dispose();
     super.dispose();
   }
@@ -365,7 +367,7 @@ class _AdminFinanceState extends State<AdminFinance> {
                 Expanded(child: Text('Motor parking rental', style: hd(17))),
               ]),
               const SizedBox(height: 8),
-              Text("Monthly rate for residents renting a motor/motorcycle slot. This rate isn't fixed — the board can adjust it as needed.",
+              Text("Residents rent a motor/motorcycle slot for one month or by the day. Set a rate for each. The board can adjust them as needed.",
                   style: TextStyle(color: muted(context), fontSize: 12.5, height: 1.4)),
               const SizedBox(height: 12),
               Row(
@@ -381,14 +383,36 @@ class _AdminFinanceState extends State<AdminFinance> {
                   FilledButton(
                     onPressed: () {
                       final err = app.setRate(rate.text);
-                      msg(context, err ?? 'Motor parking rate updated to ${peso(app.motorRate)}/month.');
+                      msg(context, err ?? 'Monthly parking rate updated to ${peso(app.motorRate)}/month.');
                     },
                     child: const Text('Update'),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
-              Text('Current rate: ${peso(app.motorRate)}/month', style: const TextStyle(fontWeight: FontWeight.w700)),
+              Text('Current monthly rate: ${peso(app.motorRate)}/month', style: const TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: rateDay,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(labelText: 'Daily rate (₱ per day)'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    onPressed: () {
+                      final err = app.setDailyRate(rateDay.text);
+                      msg(context, err ?? 'Daily parking rate updated to ${peso(app.motorRateDay)}/day.');
+                    },
+                    child: const Text('Update'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(app.motorRateDay > 0 ? 'Current daily rate: ${peso(app.motorRateDay)}/day' : 'Daily rate not set (the daily option is hidden)', style: const TextStyle(fontWeight: FontWeight.w700)),
               if (app.parking.isNotEmpty) ...[
                 const Divider(height: 24),
                 Text('Slot requests', style: TextStyle(color: muted(context), fontWeight: FontWeight.w700)),

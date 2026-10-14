@@ -75,7 +75,7 @@ class ResDues extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Motor parking · ${r.slot}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                        Text('${peso(r.amount)} a month · ${proof == null ? 'waiting for your payment' : (proof.status == 'Confirmed' ? 'paid' : 'payment sent, waiting for the office')}',
+                        Text('${peso(r.amount)} · ${parkPlanText(r.plan, r.days)} · ${proof == null ? 'waiting for your payment' : (proof.status == 'Confirmed' ? 'paid' : 'payment sent, waiting for the office')}',
                             style: TextStyle(color: muted(context), fontSize: 12.5)),
                       ],
                     ),
@@ -217,7 +217,11 @@ class ResDues extends StatelessWidget {
                 TextSpan(children: [
                   const TextSpan(text: 'Rent a motor/motorcycle parking slot for '),
                   TextSpan(text: app.motorRate > 0 ? '${peso(app.motorRate)}/month' : 'the monthly rate', style: const TextStyle(fontWeight: FontWeight.w800)),
-                  const TextSpan(text: ". This rate isn't fixed and may change — check with the office for the latest amount."),
+                  if (app.motorRateDay > 0) ...[
+                    const TextSpan(text: ' or '),
+                    TextSpan(text: '${peso(app.motorRateDay)}/day', style: const TextStyle(fontWeight: FontWeight.w800)),
+                  ],
+                  const TextSpan(text: ". Rates may change — check with the office for the latest amount."),
                 ]),
                 style: TextStyle(color: muted(context), fontSize: 13, height: 1.45),
               ),
