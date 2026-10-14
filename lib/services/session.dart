@@ -13,6 +13,15 @@ class AccountResult {
   const AccountResult({this.error, this.password});
 }
 
+/// Where the verification codes were sent, or why they could not be sent.
+class VerifyStart {
+  final String? error;
+  final String email, phone;
+  final int cooldown;
+  final bool alreadyDone;
+  const VerifyStart({this.error, this.email = '', this.phone = '', this.cooldown = 60, this.alreadyDone = false});
+}
+
 /// Signing in and out with Supabase Auth, the signed-in person's profile, and
 /// the administrator's account tools (create a resident account, reset a password, ...).
 class SessionService {
@@ -75,8 +84,10 @@ class SessionService {
         phone: (p['phone'] ?? '').toString(),
         unit: unit,
         mustChange: p['must_change_password'] == true,
+        verified: p['contact_verified_at'] != null,
       );
-      unawaited(cloud.begin());
+      // A resident sees nothing until the email and mobile number are verified.
+      if (app.contactVerified) unawaited(cloud.begin());
       if (role == Role.admin) unawaited(loadAccounts());
       return null;
     } catch (_) {
@@ -133,20 +144,67 @@ class SessionService {
 
   // ------------------------------------------------------------ own account
 
-  /// Saves the name and mobile number of the signed-in person.
+  /// Saves the name (and, for the administrator, the mobile number) of the signed-in person.
+  /// A resident's number is verified, so only the administrator can change it.
   Future<String?> saveProfile(String name, String phone) async {
     if (name.trim().isEmpty) return 'Enter your name.';
-    final ph = phone.trim();
-    if (ph.isNotEmpty && !AppState.validMobile(AppState.normalizePhone(ph))) {
+    final admin = app.role == Role.admin;
+    final ph = admin ? phone.trim() : (app.me?.phone ?? '');
+    if (admin && ph.isNotEmpty && !AppState.validMobile(AppState.normalizePhone(ph))) {
       return 'Enter a valid mobile number, e.g. 0917 555 0112.';
     }
     try {
-      await _c.from('profiles').update({'name': name.trim(), 'phone': ph}).eq('id', app.userId);
+      await _c.from('profiles').update({'name': name.trim(), if (admin) 'phone': ph}).eq('id', app.userId);
     } catch (_) {
       return 'Could not save. Check your internet connection and try again.';
     }
     app.setMyProfile(name.trim(), ph);
     return null;
+  }
+
+  // ------------------------------------------------------------ verifying email + mobile
+
+  Future<Map<String, dynamic>> _verify(Map<String, dynamic> body) async {
+    try {
+      final r = await _c.functions.invoke('verify-contact', body: body);
+      final d = r.data;
+      if (d is Map) return Map<String, dynamic>.from(d);
+      return {'error': 'Unexpected reply from the server.'};
+    } on FunctionException catch (e) {
+      final d = e.details;
+      if (d is Map && d['error'] != null) return {'error': d['error'].toString()};
+      return {'error': 'The server could not do that (${e.status}).'};
+    } catch (_) {
+      return {'error': 'Could not reach the server. Check your internet connection.'};
+    }
+  }
+
+  /// Emails one code and texts another. Returns where they went (masked) or an error.
+  Future<VerifyStart> sendVerificationCodes() async {
+    final r = await _verify({'action': 'send'});
+    if (r['error'] != null) return VerifyStart(error: r['error'].toString());
+    if (r['verified'] == true) {
+      await _finishVerification();
+      return const VerifyStart(alreadyDone: true);
+    }
+    return VerifyStart(
+      email: (r['email'] ?? '').toString(),
+      phone: (r['phone'] ?? '').toString(),
+      cooldown: (r['cooldown'] is num) ? (r['cooldown'] as num).toInt() : 60,
+    );
+  }
+
+  /// Checks both codes. Returns an error message, or null when the account is verified.
+  Future<String?> checkVerificationCodes(String emailCode, String smsCode) async {
+    final r = await _verify({'action': 'check', 'emailCode': emailCode.trim(), 'smsCode': smsCode.trim()});
+    if (r['error'] != null) return r['error'].toString();
+    await _finishVerification();
+    return null;
+  }
+
+  Future<void> _finishVerification() async {
+    app.contactVerifiedNow();
+    unawaited(cloud.begin());
   }
 
   /// Change password: the current password is checked first.
@@ -208,6 +266,7 @@ class SessionService {
             'Resident',
             _addedText(p['created_at']),
             suspended: p['suspended'] == true,
+            verified: p['contact_verified_at'] != null,
           )
       ]);
     } catch (_) {}
@@ -242,6 +301,9 @@ class SessionService {
       return const AccountResult(error: 'Enter a valid email address.');
     }
     if (unit.trim().isEmpty) return const AccountResult(error: "Assign a unit to confirm this resident's account.");
+    if (!AppState.validMobile(AppState.normalizePhone(phone))) {
+      return const AccountResult(error: 'Enter a valid Philippine mobile number, e.g. 0917 555 0112. A code is texted to it.');
+    }
     final r = await _call({
       'action': 'create',
       'name': name.trim(),

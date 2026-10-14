@@ -13,6 +13,16 @@ function reply(body: unknown, status = 200) {
   });
 }
 
+/** A Philippine mobile number: 0917 123 4567, +63 917 123 4567 or 9171234567. */
+function validPhone(raw: string): boolean {
+  let d = String(raw ?? "").replace(/[^\d+]/g, "");
+  if (d.startsWith("+")) d = d.slice(1);
+  if (d.startsWith("63")) d = d.slice(2);
+  else if (d.startsWith("0")) d = d.slice(1);
+  return /^9\d{9}$/.test(d);
+}
+const PHONE_MSG = "Enter a valid Philippine mobile number, e.g. 0917 123 4567.";
+
 // Easy to read out loud: no 0/O or 1/l/I.
 function tempPassword(): string {
   const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -67,6 +77,7 @@ Deno.serve(async (req: Request) => {
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return reply({ error: "Enter a valid email address." }, 400);
       if (!name) return reply({ error: "Enter the resident's name." }, 400);
       if (!unit) return reply({ error: "Choose the resident's unit." }, 400);
+      if (!validPhone(phone)) return reply({ error: PHONE_MSG }, 400);
       const { data: unitRow } = await admin
         .from("records")
         .select("id")
@@ -94,6 +105,7 @@ Deno.serve(async (req: Request) => {
         role: "resident",
         suspended: false,
         must_change_password: true,
+        contact_verified_at: null,
       });
       if (pErr) {
         await admin.auth.admin.deleteUser(created.user.id);
@@ -127,9 +139,16 @@ Deno.serve(async (req: Request) => {
     if (action === "update-profile") {
       const t = await targetResident();
       if (t.error) return reply({ error: t.error }, 400);
-      const patch: Record<string, string> = {};
+      const patch: Record<string, string | null> = {};
       if (body.name !== undefined) patch.name = String(body.name).trim();
-      if (body.phone !== undefined) patch.phone = String(body.phone).trim();
+      if (body.phone !== undefined) {
+        const phone = String(body.phone).trim();
+        if (!validPhone(phone)) return reply({ error: PHONE_MSG }, 400);
+        const { data: cur } = await admin.from("profiles").select("phone").eq("id", userId).maybeSingle();
+        patch.phone = phone;
+        // A new number must be verified again.
+        if (cur?.phone !== phone) patch.contact_verified_at = null;
+      }
       if (body.unit !== undefined) {
         const unit = String(body.unit).trim();
         const { data: unitRow } = await admin.from("records").select("id").eq("kind", "unit").eq("id", unit).maybeSingle();

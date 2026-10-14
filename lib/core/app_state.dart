@@ -143,8 +143,11 @@ class Account {
   final String id;
   String name, email, phone, unit, role, added;
   bool suspended;
+
+  /// Email and mobile number were confirmed with codes.
+  bool verified;
   Account(this.id, this.name, this.email, this.phone, this.unit, this.role, this.added,
-      {this.suspended = false});
+      {this.suspended = false, this.verified = false});
 }
 
 class ResidentUser {
@@ -192,6 +195,9 @@ class AppState extends ChangeNotifier {
 
   /// True after the administrator created or reset this account: a new password must be chosen.
   bool mustChangePassword = false;
+
+  /// False for a resident who has not yet confirmed the email and mobile number with codes.
+  bool contactVerified = true;
 
   /// True once the first copy of the shared data has arrived after signing in.
   bool loaded = false;
@@ -302,11 +308,13 @@ class AppState extends ChangeNotifier {
     required String phone,
     required String unit,
     required bool mustChange,
+    bool verified = true,
   }) {
     clearData();
     this.role = role;
     userId = id;
     mustChangePassword = mustChange;
+    contactVerified = role == Role.admin || verified;
     if (role == Role.admin) {
       adminName = name.trim().isEmpty ? 'Administrator' : name.trim();
       adminEmail = email;
@@ -332,6 +340,11 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  void contactVerifiedNow() {
+    contactVerified = true;
+    _n();
+  }
+
   void setMyProfile(String name, String phone) {
     final u = me;
     if (u != null) {
@@ -350,6 +363,7 @@ class AppState extends ChangeNotifier {
     me = null;
     userId = '';
     mustChangePassword = false;
+    contactVerified = true;
     resTab = 0;
     adminTab = 0;
     clearData();

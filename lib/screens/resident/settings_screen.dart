@@ -52,7 +52,7 @@ class _ResSettingsState extends State<ResSettings> {
                 const SizedBox(height: 10),
                 TextField(enabled: false, controller: TextEditingController(text: app.me!.email), decoration: const InputDecoration(labelText: 'Email address (used to sign in)')),
                 const SizedBox(height: 10),
-                TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone number')),
+                TextField(controller: phone, enabled: false, decoration: const InputDecoration(labelText: 'Mobile number (verified; ask the administrator to change it)')),
                 const SizedBox(height: 10),
                 TextField(enabled: false, controller: TextEditingController(text: app.me!.unit), decoration: const InputDecoration(labelText: 'Unit (set by administrator)')),
                 const SizedBox(height: 14),
