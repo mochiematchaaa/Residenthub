@@ -84,7 +84,7 @@ class ResHome extends StatelessWidget {
             child: Row(
               children: [
                 RingGauge(
-                  value: rows.isEmpty ? 1 : paid / rows.length,
+                  value: rows.isEmpty ? 0 : paid / rows.length, // empty ring when there are no charges yet
                   size: 124,
                   center: '$paid/${rows.length}',
                   caption: 'months paid',
@@ -97,7 +97,7 @@ class ResHome extends StatelessWidget {
                       Text('Your dues', style: hd(20)),
                       const SizedBox(height: 4),
                       Text(
-                        unpaid == 0 ? 'All settled. Thank you!' : '${peso(app.myBalance)} due now',
+                        rows.isEmpty ? 'No charges yet.' : unpaid == 0 ? 'All settled. Thank you!' : '${peso(app.myBalance)} due now',
                         style: const TextStyle(color: inkSoft, fontSize: 13, height: 1.3),
                       ),
                       const SizedBox(height: 4),

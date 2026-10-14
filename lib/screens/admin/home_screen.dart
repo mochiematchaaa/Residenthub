@@ -55,7 +55,7 @@ class AdminHome extends StatelessWidget {
                 child: Row(
                   children: [
                     RingGauge(
-                      value: app.dues.isEmpty ? 1 : settled / app.dues.length,
+                      value: app.dues.isEmpty ? 0 : settled / app.dues.length, // empty ring when there are no charges yet
                       size: 124,
                       center: '$settled/${app.dues.length}',
                       caption: 'units settled',
