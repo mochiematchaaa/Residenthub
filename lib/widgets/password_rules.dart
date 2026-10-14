@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../core/core.dart';
+import '../core/password_rules.dart';
+import 'common.dart' show muted;
 
 /// A live checklist under a "new password" field: each rule gets a check mark once the password follows it.
 class PasswordRulesList extends StatelessWidget {
