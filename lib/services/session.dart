@@ -272,7 +272,8 @@ class SessionService {
   }
 
   String? _checkNew(String nw, String conf) {
-    if (nw.length < 8) return 'New password must be at least 8 characters.';
+    final rule = passwordProblem(nw);
+    if (rule != null) return rule;
     if (nw != conf) return "New password and confirmation don't match.";
     return null;
   }

@@ -31,6 +31,9 @@ after copying `pubspec.yaml`.
 - Turn off "Allow new users to sign up" in Supabase (Authentication > Sign In / Providers) so only the
   administrator can create accounts.
 
+## Password rules
+A new password must have at least 8 characters, an uppercase letter, a lowercase letter, a number and a symbol. The screens (first password, change password, forgot password) show a live checklist with a check mark for each rule that is followed (`lib/core/password_rules.dart`, `lib/widgets/password_rules.dart`); the Edge Function `reset-password` checks the same rules, and the temporary passwords made by `manage-users` follow them. For the same rules on every path, also set the password requirements in Supabase (Authentication > Sign In / Providers > Email) to a minimum length of 8 with lowercase, uppercase, digits and symbols.
+
 ## Verifying a new account (email code + text message code)
 A resident created by the administrator must, at first sign-in, choose a new password and then confirm the
 email address and the mobile number with two 6-digit codes. Until both are right the database shows the
