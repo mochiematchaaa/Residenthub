@@ -7,6 +7,7 @@ import 'core/core.dart';
 import 'screens/admin/admin_screens.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/new_password_screen.dart';
+import 'screens/auth/verify_contact_screen.dart';
 import 'screens/resident/resident_screens.dart';
 import 'services/cloud_sync.dart' show cloud, CloudState, rootMessengerKey;
 import 'services/session.dart';
@@ -37,6 +38,8 @@ class ResidentHubApp extends StatelessWidget {
           home = const LoginScreen(key: ValueKey('login'));
         } else if (app.mustChangePassword) {
           home = const NewPasswordScreen(key: ValueKey('newpass'));
+        } else if (!app.contactVerified) {
+          home = const VerifyContactScreen(key: ValueKey('verify'));
         } else if (!app.loaded) {
           home = const _LoadingScreen(key: ValueKey('load'), signedIn: true);
         } else if (app.role == Role.admin) {

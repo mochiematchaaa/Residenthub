@@ -35,7 +35,7 @@ class _AdminAccessState extends State<AdminAccess> {
               fields: const [
                 FieldSpec('name', 'Full name', hint: 'e.g. Ana Reyes'),
                 FieldSpec('email', 'Email address', type: TextInputType.emailAddress, hint: 'e.g. ana.reyes@gmail.com'),
-                FieldSpec('phone', 'Phone number', type: TextInputType.phone, hint: 'e.g. 0917 555 0000'),
+                FieldSpec('phone', 'Mobile number (a code is texted to it)', type: TextInputType.phone, hint: 'e.g. 0917 555 0000'),
                 FieldSpec('unit', 'Unit (must already exist under Units)', hint: 'e.g. Unit 12A'),
               ],
               submit: 'Create account',
@@ -104,7 +104,7 @@ class _AdminAccessState extends State<AdminAccess> {
                             children: [
                               Pill(t.role, tone: Tone.good),
                               const SizedBox(height: 4),
-                              Pill(t.suspended ? 'Suspended' : 'Active'),
+                              Pill(t.suspended ? 'Suspended' : (t.verified ? 'Active' : 'Not verified yet'), tone: (!t.suspended && !t.verified) ? Tone.warn : null),
                             ],
                           ),
                         ],
@@ -185,7 +185,7 @@ Future<void> _showPassword(BuildContext context, String email, String password, 
           SelectableText(password, style: hd(24)),
           const SizedBox(height: 10),
           Text(
-            'Give this password to the resident privately. It is shown only now. When they sign in, the app asks them to choose their own password.',
+            'Give this password to the resident privately. It is shown only now. When they sign in, the app asks them to choose their own password and, for a new account, to enter a code sent to their email and a code sent to their mobile number.',
             style: TextStyle(color: muted(ctx), fontSize: 13),
           ),
         ],
