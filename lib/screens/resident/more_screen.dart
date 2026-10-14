@@ -40,6 +40,14 @@ class ResMore extends StatelessWidget {
         NavGroup(label: 'My unit', children: [
           NavTile(icon: Icons.calendar_month_rounded, title: 'Calendar', subtitle: 'Events, bookings and due dates', onTap: () => go(context, const CalendarScreen(admin: false))),
           NavTile(icon: Icons.event_note_rounded, title: 'My reservations', subtitle: '${app.myBookings.length} requests and bookings', onTap: () => go(context, const ResReservations())),
+          NavTile(
+            icon: Icons.two_wheeler_rounded,
+            title: 'Motor parking',
+            subtitle: app.slotOf(app.myUnit) != null
+                ? 'Your slot: ${app.slotOf(app.myUnit)!.id}'
+                : (app.parkingRequested ? 'Request sent, waiting for the office' : 'Request a parking slot'),
+            onTap: () => app.setResTab(2),
+          ),
           NavTile(icon: Icons.edit_note_rounded, title: 'Grievances', subtitle: openGr == 0 ? 'Nothing open' : '$openGr open', onTap: () => go(context, const ResGrievances())),
           NavTile(
             icon: statusOf(rec?.usage ?? 'owner').icon,

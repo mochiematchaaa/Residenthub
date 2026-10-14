@@ -130,7 +130,10 @@ class _AdminUnitsState extends State<AdminUnits> {
             _kv(context, 'Contact', u.contact),
             _kv(context, 'Open charges', app.unpaidCountFor(u.unit) == 0 ? 'None' : '${app.unpaidCountFor(u.unit)} · ${peso(app.balanceFor(u.unit))}'),
             _kv(context, 'Unit state', usageLabel(u.usage)),
-            if (u.statusNote.isNotEmpty) _kv(context, 'Note', u.statusNote),
+            if (usageInfoRows(u.usage, u.usageInfo).isNotEmpty)
+              for (final r in usageInfoRows(u.usage, u.usageInfo)) _kv(context, r[0], r[1])
+            else if (u.statusNote.isNotEmpty)
+              _kv(context, 'Note', u.statusNote),
             if (u.statusDate.isNotEmpty) _kv(context, 'Updated', u.statusDate),
             const SizedBox(height: 14),
             SizedBox(

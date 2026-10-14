@@ -8,6 +8,7 @@ import 'doc_model.dart';
 import 'doc_seed.dart';
 import 'expenses.dart';
 import 'payments.dart';
+import 'usage_forms.dart';
 
 part 'cloud_codec.dart';
 
@@ -56,8 +57,12 @@ class Unit {
 
   /// The administrator's note shown to the resident when a declaration is rejected.
   String usageRemark;
+
+  /// The details the resident gave for this way of using the unit (see usage_forms.dart).
+  Map<String, String> usageInfo;
   Unit(this.unit, this.name, this.type, this.status, this.contact, this.usage,
-      {this.statusNote = '', this.statusDate = '', this.usageStatus = '', this.usageRemark = ''});
+      {this.statusNote = '', this.statusDate = '', this.usageStatus = '', this.usageRemark = '', Map<String, String>? usageInfo})
+      : usageInfo = usageInfo ?? {};
 
   /// Short-term rentals and home businesses need the administrator's approval.
   bool get needsApproval => usage == 'shortterm' || usage == 'business';
@@ -938,6 +943,23 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Resident declares how the unit is used. Tenants, short-term rentals, businesses and renovations
+  /// come with the details the office needs.
+  String? declareUnit(String key, Map<String, String> info, String note) {
+    final u = myUnitRec;
+    if (u == null) return 'Unit record not found.';
+    if (usageForms.containsKey(key)) {
+      final err = validateUsage(key, info);
+      if (err != null) return err;
+      final clean = {for (final e in info.entries) if (e.value.trim().isNotEmpty) e.key: e.value.trim()};
+      _applyStatus(u, key, usageSummary(key, clean), 'Resident', info: clean);
+    } else {
+      _applyStatus(u, key, note.trim(), 'Resident', info: <String, String>{});
+    }
+    _n();
+    return null;
+  }
+
   /// Admin sets the state of any unit.
   void adminSetStatus(Unit u, String key, String note) {
     _applyStatus(u, key, note.trim(), 'Admin');
@@ -950,8 +972,10 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
-  void _applyStatus(Unit u, String key, String note, String by) {
+  void _applyStatus(Unit u, String key, String note, String by, {Map<String, String>? info}) {
     final date = shortDate(DateTime.now());
+    // The details only belong to the way the unit was declared as. Another way starts empty.
+    u.usageInfo = info ?? (key == u.usage ? u.usageInfo : <String, String>{});
     u.usage = key;
     final needs = key == 'shortterm' || key == 'business';
     // A resident's declaration waits for the administrator; the administrator's own change is approved.
@@ -1135,13 +1159,20 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  /// Admin: takes a free slot off the parking area.
-  String? removeSlot(ParkingSlot s) {
-    if (s.used) return 'Release ${s.id} first, then remove it.';
+  /// Admin: deletes a slot. A resident who had it loses it, and their request is cleared.
+  void removeSlot(ParkingSlot s) {
+    final unit = s.unit;
     slots.remove(s);
-    logActivity('Parking slot ${s.id} removed', 'Parking');
+    if (unit.isNotEmpty) parking.removeWhere((r) => r.unit == unit);
+    logActivity('Parking slot ${s.id} deleted${unit.isEmpty ? '' : ' (was $unit)'}', 'Parking');
     _n();
-    return null;
+  }
+
+  /// Resident: takes back a parking request the office has not answered yet.
+  void cancelMyParkingRequest() {
+    parking.removeWhere((r) => r.unit == myUnit && !r.confirmed);
+    logActivity('Motor parking request cancelled, $myUnit', 'Parking');
+    _n();
   }
 
   void assignSlot(ParkingSlot s, String unit) {

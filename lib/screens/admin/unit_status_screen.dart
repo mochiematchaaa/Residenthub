@@ -87,7 +87,29 @@ class _AdminUnitStatusState extends State<AdminUnitStatus> {
               Pill(usageLabel(u.usage), tone: Tone.warn),
             ],
           ),
-          if (u.statusNote.isNotEmpty) ...[
+          if (usageInfoRows(u.usage, u.usageInfo).isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: toneOf(context, Tone.info).bg, borderRadius: BorderRadius.circular(14)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final r in usageInfoRows(u.usage, u.usageInfo))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(r[0], style: TextStyle(color: muted(context), fontSize: 11.5)),
+                          Text(r[1], style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, height: 1.3)),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ] else if (u.statusNote.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(u.statusNote, style: TextStyle(color: muted(context), fontSize: 13, height: 1.35)),
           ],

@@ -21,6 +21,7 @@ class ResidentShell extends StatelessWidget {
         final pages = <Widget>[
           ResHome(),
           ResBook(),
+          ResParking(tab: true),
           ResDues(),
           ResMore(),
         ];
@@ -41,6 +42,8 @@ class ResidentShell extends StatelessWidget {
             items: [
               const NavItem(Icons.home_outlined, Icons.home_rounded, 'Home'),
               const NavItem(Icons.event_available_outlined, Icons.event_available_rounded, 'Book'),
+              NavItem(Icons.local_parking_outlined, Icons.local_parking_rounded, 'Parking',
+                  badge: app.slots.length - app.slotsUsed),
               NavItem(Icons.account_balance_wallet_outlined, Icons.account_balance_wallet_rounded, 'Dues',
                   badge: app.myDueRows.where((d) => d.status != 'Paid').length),
               const NavItem(Icons.grid_view_outlined, Icons.grid_view_rounded, 'More'),
