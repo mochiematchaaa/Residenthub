@@ -34,7 +34,7 @@ class AdminFinanceDocs extends StatelessWidget {
       onSubmit: (v) {
         final n = (v['name'] as String).trim();
         if (n.isEmpty) return 'Enter a title.';
-        app.addDoc(DocItem(
+        return app.addDoc(DocItem(
           n,
           'Finance',
           'Added ${shortDate(DateTime.now()).split(',').first}',
@@ -43,7 +43,6 @@ class AdminFinanceDocs extends StatelessWidget {
           raw: file.bytes,
           ext: file.ext,
         ));
-        return null;
       },
     );
   }

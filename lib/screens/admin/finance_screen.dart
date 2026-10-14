@@ -18,10 +18,12 @@ class AdminFinance extends StatefulWidget {
 class _AdminFinanceState extends State<AdminFinance> {
   String filter = 'Unpaid';
   late final rate = TextEditingController(text: app.motorRate.toStringAsFixed(0));
+  late final duesRate = TextEditingController(text: app.duesRate == 0 ? '' : app.duesRate.toStringAsFixed(0));
 
   @override
   void dispose() {
     rate.dispose();
+    duesRate.dispose();
     super.dispose();
   }
 
@@ -75,6 +77,32 @@ class _AdminFinanceState extends State<AdminFinance> {
           if (mounted && rec != null) msg(context, 'Payment recorded. Receipt ${rec.receiptNo} issued.');
         });
         return null;
+      },
+    );
+  }
+
+  void _billDues() {
+    final now = DateTime.now();
+    showFormSheet(
+      context,
+      title: 'Bill monthly dues',
+      subtitle: 'Adds one charge of ${peso(app.duesRate)} to every unit that has not been billed for this month yet.',
+      fields: [
+        FieldSpec('period', 'Month', hint: 'e.g. October 2026', initial: app.monthLabel(now)),
+        FieldSpec('due', 'Due date (optional)', hint: 'e.g. Oct 15, 2026'),
+      ],
+      submit: 'Bill all units',
+      onSubmit: (v) {
+        final err = app.billMonthlyDues(v['period'] as String, v['due'] as String);
+        if (err == null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() => filter = 'Unpaid');
+              msg(context, app.lastBilledCount == 0 ? 'Every unit was already billed for that month.' : 'Billed ${app.lastBilledCount} unit${app.lastBilledCount == 1 ? '' : 's'}.');
+            }
+          });
+        }
+        return err;
       },
     );
   }
@@ -201,6 +229,50 @@ class _AdminFinanceState extends State<AdminFinance> {
                     label: Text('Expenses and monthly report (${app.expenses.length})'),
                   ),
                 ],
+              ),
+            ],
+          ),
+        ),
+        RCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const IconBadge(Icons.request_quote_outlined, accent: true),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Monthly association dues', style: hd(17))),
+              ]),
+              const SizedBox(height: 8),
+              Text('Set what each unit pays every month, then bill all units for a month in one tap. Each unit sees its own charge under Dues.',
+                  style: TextStyle(color: muted(context), fontSize: 12.5, height: 1.4)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: duesRate,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(labelText: 'Dues per unit per month (₱)'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    onPressed: () {
+                      final err = app.setDuesRate(duesRate.text);
+                      msg(context, err ?? 'Monthly dues set to ${peso(app.duesRate)} per unit.');
+                    },
+                    child: const Text('Save'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: app.duesRate > 0 && app.units.isNotEmpty ? _billDues : null,
+                  icon: const Icon(Icons.playlist_add_check_rounded),
+                  label: Text(app.units.isEmpty ? 'Add units first' : (app.duesRate > 0 ? 'Bill monthly dues' : 'Save the dues amount first')),
+                ),
               ),
             ],
           ),

@@ -6,8 +6,11 @@ import 'package:flutter/material.dart';
 import 'core/core.dart';
 import 'screens/admin/admin_screens.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/auth/new_password_screen.dart';
 import 'screens/resident/resident_screens.dart';
-import 'services/cloud_sync.dart' show cloud;
+import 'services/cloud_sync.dart' show cloud, CloudState, rootMessengerKey;
+import 'services/session.dart';
+import 'widgets/widgets.dart';
 
 /// Overall text size. 1.0 is Flutter's default; lower it to make all text smaller.
 const double kTextScale = 0.9;
@@ -15,8 +18,8 @@ const double kTextScale = 0.9;
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const ResidentHubApp());
-  // Live updates with the website. Does nothing until supabase_config.dart is filled in.
-  cloud.start();
+  // Connects to the database and signs the person in again if their last sign-in is still valid.
+  session.init();
 }
 
 class ResidentHubApp extends StatelessWidget {
@@ -28,15 +31,22 @@ class ResidentHubApp extends StatelessWidget {
       listenable: app,
       builder: (context, _) {
         final Widget home;
-        if (app.role == Role.admin) {
-          home = const AdminShell(key: ValueKey('admin'));
-        } else if (app.role == Role.resident) {
-          home = const ResidentShell(key: ValueKey('resident'));
-        } else {
+        if (app.booting) {
+          home = const _LoadingScreen(key: ValueKey('boot'));
+        } else if (app.role == null) {
           home = const LoginScreen(key: ValueKey('login'));
+        } else if (app.mustChangePassword) {
+          home = const NewPasswordScreen(key: ValueKey('newpass'));
+        } else if (!app.loaded) {
+          home = const _LoadingScreen(key: ValueKey('load'), signedIn: true);
+        } else if (app.role == Role.admin) {
+          home = const AdminShell(key: ValueKey('admin'));
+        } else {
+          home = const ResidentShell(key: ValueKey('resident'));
         }
         return MaterialApp(
           title: 'ResidentHub',
+          scaffoldMessengerKey: rootMessengerKey,
           debugShowCheckedModeBanner: false,
           theme: buildTheme(Brightness.light),
           darkTheme: buildTheme(Brightness.dark),
@@ -83,6 +93,48 @@ class ResidentHubApp extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Shown while the app checks the last sign-in and while the first data arrives.
+class _LoadingScreen extends StatelessWidget {
+  final bool signedIn;
+  const _LoadingScreen({super.key, this.signedIn = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: ListenableBuilder(
+          listenable: cloud,
+          builder: (context, _) {
+            final problem = cloud.state == CloudState.problem;
+            return Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('ResidentHub', style: hd(24)),
+                  const SizedBox(height: 18),
+                  if (!problem) const CircularProgressIndicator(),
+                  const SizedBox(height: 14),
+                  Text(
+                    problem ? cloud.detail : (signedIn ? 'Loading your data…' : 'Starting…'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: problem ? danger : null),
+                  ),
+                  if (signedIn && problem) ...[
+                    const SizedBox(height: 12),
+                    FilledButton(onPressed: cloud.begin, child: const Text('Try again')),
+                    TextButton(onPressed: session.signOut, child: const Text('Sign out')),
+                  ],
+                ],
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }

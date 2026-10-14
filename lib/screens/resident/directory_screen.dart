@@ -11,7 +11,9 @@ class ResDirectory extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const colors = [Pastel.butter, Pastel.mint, Pastel.peach, Pastel.coral];
-    return SubPage(
+    return ListenableBuilder(
+      listenable: app,
+      builder: (context, _) => SubPage(
       title: 'Directory',
       subtitle: 'Who to call, house rules, and answers to common questions.',
       children: [
@@ -20,6 +22,7 @@ class ResDirectory extends StatelessWidget {
           hint: 'Local numbers are dialled from the building intercom. Tap a card to copy the number.',
           child: Column(
             children: [
+              if (directoryContacts.isEmpty) const EmptyBox('The office has not added any contacts yet.', icon: Icons.call_outlined),
               for (var i = 0; i < directoryContacts.length; i++)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -57,6 +60,7 @@ class ResDirectory extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (houseRules.isEmpty) Text('The office has not posted any house rules yet.', style: TextStyle(color: muted(context), fontSize: 13)),
                 for (var i = 0; i < houseRules.length; i++)
                   Padding(
                     padding: EdgeInsets.only(top: i == 0 ? 0 : 14),
@@ -93,6 +97,6 @@ class ResDirectory extends StatelessWidget {
           ),
         ),
       ],
-    );
+    ));
   }
 }

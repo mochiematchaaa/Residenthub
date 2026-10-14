@@ -38,6 +38,8 @@ const docCategories = ['Policy', 'Finance', 'Form', 'Notice', 'Minutes', 'Other'
 const communityCategories = ['Policy', 'Form', 'Notice', 'Minutes', 'Other'];
 
 class DocItem {
+  /// Set when the document is saved to the shared database (empty for the live reports).
+  final String id;
   final String name, cat, date;
 
   /// 'all' | 'admin' | 'resident' - who can see this document.
@@ -59,7 +61,11 @@ class DocItem {
     this.audience = 'all',
     this.raw,
     this.ext = '',
+    this.id = '',
   }) : _blocks = blocks;
+
+  DocItem withId(String newId) => DocItem(name, cat, date,
+      blocks: _blocks, live: live, audience: audience, raw: raw, ext: ext, id: newId);
 
   /// Live documents are rebuilt from the app data every time they are opened.
   bool get isLive => live != null;

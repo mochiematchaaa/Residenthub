@@ -19,23 +19,6 @@ class Poll {
   int get total => options.fold<int>(0, (s, o) => s + o.votes);
 }
 
-List<Poll> seedPolls() => [
-      Poll(1, 'Repaint the ground-floor lobby this year?', true, 'Oct 20, 2026', [
-        PollOption('Yes, repaint now', 31),
-        PollOption('Wait until next year', 9),
-        PollOption('No repaint needed', 4),
-      ]),
-      Poll(2, 'Which weekday should the pool be closed for cleaning?', true, 'Oct 25, 2026', [
-        PollOption('Monday', 18),
-        PollOption('Wednesday', 7),
-        PollOption('Thursday', 12),
-      ]),
-      Poll(3, 'Add a second coffee-lounge hour in the afternoon?', false, 'Sep 15, 2026', [
-        PollOption('Yes', 38),
-        PollOption('No', 6),
-      ]),
-    ];
-
 /// One motor parking slot. [unit] is empty when the slot is free.
 class ParkingSlot {
   final String id;
@@ -44,15 +27,8 @@ class ParkingSlot {
   bool get used => unit.isNotEmpty;
 }
 
-List<ParkingSlot> seedSlots() {
-  const units = [
-    'Unit 12A', 'Unit 7C', 'Unit 3B', 'Unit 15D', 'Unit 9A', 'Unit 21B', 'Unit 18C',
-    'Unit 6B', 'Unit 2A', 'Unit 8C', 'Unit 10D', 'Unit 14A', 'Unit 17B',
-  ];
-  return [
-    for (var i = 0; i < 24; i++) ParkingSlot('M-${(i + 1).toString().padLeft(2, '0')}', i < units.length ? units[i] : ''),
-  ];
-}
+/// Slot names for a motor parking area with [n] slots: M-01, M-02, ...
+List<String> slotNames(int n) => [for (var i = 1; i <= n; i++) 'M-${i.toString().padLeft(2, '0')}'];
 
 // ---------------------------------------------------------------- directory
 
@@ -61,21 +37,11 @@ class ContactInfo {
   const ContactInfo(this.name, this.note, this.tel);
 }
 
-const directoryContacts = [
-  ContactInfo('Security desk', 'Open 24 hours · Gate and lobby', 'Local 101'),
-  ContactInfo('Administration office', 'Mon–Sat, 8 AM – 5 PM · Dues, bookings, documents', 'Local 102'),
-  ContactInfo('Maintenance', 'Repairs in common areas · Report through Grievances', 'Local 103'),
-  ContactInfo('Emergency hotline', 'Fire, police or medical emergencies', '911'),
-];
+/// Filled in by the administrator (More > Directory and house rules) and shared with every resident.
+final List<ContactInfo> directoryContacts = [];
 
-const houseRules = [
-  ['Swimming pool', 'Open 6:00 AM – 8:00 PM. Shower before entering and keep glass out of the pool area.'],
-  ['Function Hall', 'Open 8:00 AM – 10:00 PM. Book ahead, and leave the hall clean for the next group.'],
-  ['Quiet hours', 'Please keep noise low from 10:00 PM to 6:00 AM, including music and renovation work.'],
-  ['Common areas', 'No smoking inside the building. Keep hallways, stairs and the lobby clear.'],
-  ['Pets', 'Pets stay on a leash in common areas, and owners clean up after them.'],
-  ['Garbage', 'Bag and tie your waste, and use the designated disposal area only.'],
-];
+/// Each rule is [title, text]. Filled in by the administrator.
+final List<List<String>> houseRules = [];
 
 const directoryFaq = [
   [

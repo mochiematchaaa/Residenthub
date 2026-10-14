@@ -24,7 +24,7 @@ class ResDues extends StatelessWidget {
       choices: [ChoiceSpec('method', 'Paid through', online, online.first)],
       fields: [
         const FieldSpec('ref', 'Reference no.', hint: 'From your GCash / Maya / bank receipt'),
-        FieldSpec('amount', 'Amount paid (₱)', type: TextInputType.number, initial: '${app.myBalance > 0 ? app.myBalance : 450}'),
+        FieldSpec('amount', 'Amount paid (₱)', type: TextInputType.number, initial: app.myBalance > 0 ? app.myBalance.toStringAsFixed(2) : ''),
       ],
       submit: 'Send',
       onSubmit: (v) {
@@ -36,91 +36,6 @@ class ResDues extends StatelessWidget {
         }
         return err;
       },
-    );
-  }
-
-  /// Simulated online checkout. It stands in for a real payment gateway:
-  /// no real money is charged, and the screen says so.
-  void _payOnline(BuildContext context) {
-    if (app.myBalance <= 0) {
-      msg(context, 'You have no balance to pay.');
-      return;
-    }
-    const methods = ['GCash', 'Maya', 'Bank transfer', 'Credit or debit card'];
-    var method = methods.first;
-    var busy = false;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      isDismissible: false,
-      enableDrag: false,
-      useSafeArea: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => Padding(
-          padding: EdgeInsets.fromLTRB(20, 18, 20, 24 + MediaQuery.of(ctx).viewInsets.bottom),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Pay online', style: hd(22)),
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Pastel.butter.color, borderRadius: BorderRadius.circular(12)),
-                child: const Text(
-                  'Simulation. This shows how online payment would work once a payment gateway is connected. No real money is charged.',
-                  style: TextStyle(color: ink, fontSize: 12.5, height: 1.4, fontWeight: FontWeight.w600),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text('Amount to pay', style: TextStyle(color: muted(ctx), fontWeight: FontWeight.w600)),
-              const SizedBox(height: 2),
-              Text(peso(app.myBalance), style: hd(30)),
-              const SizedBox(height: 14),
-              Text('Pay with', style: TextStyle(color: muted(ctx), fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final m in methods)
-                    ChoiceChip(
-                      label: Text(m),
-                      selected: method == m,
-                      onSelected: busy ? null : (_) => setS(() => method = m),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          setS(() => busy = true);
-                          await Future<void>.delayed(const Duration(milliseconds: 1500));
-                          final rec = app.payOnlineSimulated(method);
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          if (rec != null && context.mounted) {
-                            msg(context, 'Payment received (simulation). Your receipt is ready.');
-                            openReceipt(context, rec);
-                          }
-                        },
-                  child: busy
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4))
-                      : Text('Pay ${peso(app.myBalance)}'),
-                ),
-              ),
-              if (!busy)
-                Center(
-                  child: TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-                ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -146,6 +61,8 @@ class ResDues extends StatelessWidget {
             ],
           ),
         ),
+        if (rows.isEmpty) const EmptyBox('No charges have been billed to your unit yet.', icon: Icons.receipt_long_outlined),
+        if (rows.isNotEmpty)
         RCard(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Column(
@@ -155,7 +72,7 @@ class ResDues extends StatelessWidget {
                 ListTile(
                   leading: IconBadge(rows[i].status == 'Paid' ? Icons.check_rounded : Icons.schedule_rounded, tone: toneForStatus(rows[i].status), size: 38),
                   title: Text(rows[i].month, style: const TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: Text('Due ${rows[i].due}'),
+                  subtitle: Text(rows[i].due == 'upon receipt' ? 'Due upon receipt' : 'Due ${rows[i].due}'),
                   trailing: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -204,15 +121,6 @@ class ResDues extends StatelessWidget {
                   ),
                 ),
               const SizedBox(height: 2),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.tonalIcon(
-                  onPressed: () => _payOnline(context),
-                  icon: const Icon(Icons.credit_card_rounded),
-                  label: const Text('Pay online (simulation)'),
-                ),
-              ),
-              const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -284,7 +192,7 @@ class ResDues extends StatelessWidget {
               Text.rich(
                 TextSpan(children: [
                   const TextSpan(text: 'Rent a motor/motorcycle parking slot for '),
-                  TextSpan(text: '${peso(app.motorRate)}/month', style: const TextStyle(fontWeight: FontWeight.w800)),
+                  TextSpan(text: app.motorRate > 0 ? '${peso(app.motorRate)}/month' : 'the monthly rate', style: const TextStyle(fontWeight: FontWeight.w800)),
                   const TextSpan(text: ". This rate isn't fixed and may change — check with the office for the latest amount."),
                 ]),
                 style: TextStyle(color: muted(context), fontSize: 13, height: 1.45),
@@ -297,6 +205,9 @@ class ResDues extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
+              if (app.slots.isEmpty)
+                Text('The office has not set up motor parking slots yet.', style: TextStyle(color: muted(context), fontSize: 13)),
+              if (app.slots.isNotEmpty)
               GridView.count(
                 crossAxisCount: 6,
                 shrinkWrap: true,

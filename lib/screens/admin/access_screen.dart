@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
+import '../../services/session.dart';
 import '../../widgets/widgets.dart';
 
 class AdminAccess extends StatefulWidget {
@@ -22,7 +23,7 @@ class _AdminAccessState extends State<AdminAccess> {
         final list = app.trusted.where((t) => s.isEmpty || '${t.name} ${t.email} ${t.unit} ${t.role}'.toLowerCase().contains(s)).toList();
         return SubPage(
           title: 'Manage access',
-          subtitle: 'Only the owner can create accounts. There is no public sign-up: every resident account is added by hand.',
+          subtitle: 'Only the administrator can create accounts. There is no public sign-up: every resident account is added by hand and linked to a unit.',
           fab: FloatingActionButton.extended(
             backgroundColor: lav,
             foregroundColor: ink,
@@ -33,19 +34,23 @@ class _AdminAccessState extends State<AdminAccess> {
               title: 'Create a new account',
               fields: const [
                 FieldSpec('name', 'Full name', hint: 'e.g. Ana Reyes'),
-                FieldSpec('email', 'Email address', type: TextInputType.emailAddress, hint: 'e.g. ana.reyes@cityresidences.ph'),
+                FieldSpec('email', 'Email address', type: TextInputType.emailAddress, hint: 'e.g. ana.reyes@gmail.com'),
                 FieldSpec('phone', 'Phone number', type: TextInputType.phone, hint: 'e.g. 0917 555 0000'),
-                FieldSpec('unit', 'Unit (confirms ownership/tenancy)', hint: 'e.g. Unit 12A'),
+                FieldSpec('unit', 'Unit (must already exist under Units)', hint: 'e.g. Unit 12A'),
               ],
               submit: 'Create account',
-              onSubmit: (v) {
-                final err = app.addAccount(v['name'] as String, v['email'] as String, v['phone'] as String, 'Resident', (v['unit'] ?? '') as String);
-                if (err == null) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (context.mounted) msg(context, 'Account created. Temporary password: resident123. Ask the resident to change it in Settings.');
-                  });
-                }
-                return err;
+              onSubmit: (v) async {
+                var unit = (v['unit'] ?? '').toString().trim();
+                // accept "12a" or "Unit 12a" and match it with a unit on record
+                String norm(String t) => t.toLowerCase().replaceAll('unit', '').replaceAll(RegExp(r'[^a-z0-9]'), '');
+                final found = app.units.where((u) => norm(u.unit) == norm(unit) && norm(unit).isNotEmpty).toList();
+                if (found.isNotEmpty) unit = found.first.unit;
+                final r = await session.createResident(v['name'] as String, v['email'] as String, v['phone'] as String, unit);
+                if (r.error != null) return r.error;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (context.mounted) _showPassword(context, (v['email'] as String).trim(), r.password ?? '', created: true);
+                });
+                return null;
               },
             ),
           ),
@@ -65,11 +70,11 @@ class _AdminAccessState extends State<AdminAccess> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(app.adminName, style: const TextStyle(fontWeight: FontWeight.w700)),
-                        Text('owner (cannot be revoked)', style: TextStyle(color: muted(context), fontSize: 12.5)),
+                        Text('${app.adminEmail} · cannot be revoked here', style: TextStyle(color: muted(context), fontSize: 12.5)),
                       ],
                     ),
                   ),
-                  const Pill('Owner', tone: Tone.info),
+                  const Pill('Administrator', tone: Tone.info),
                 ],
               ),
             ),
@@ -90,7 +95,7 @@ class _AdminAccessState extends State<AdminAccess> {
                               children: [
                                 Text(t.name, style: const TextStyle(fontWeight: FontWeight.w700)),
                                 Text(t.email, style: TextStyle(color: muted(context), fontSize: 12.5)),
-                                Text('${t.phone}${t.unit != '—' ? ' · ${t.unit}' : ''} · Added ${t.added}', style: TextStyle(color: muted(context), fontSize: 12)),
+                                Text('${t.phone}${t.unit.isNotEmpty ? ' · ${t.unit}' : ''}${t.added.isEmpty ? '' : ' · Added ${t.added}'}', style: TextStyle(color: muted(context), fontSize: 12)),
                               ],
                             ),
                           ),
@@ -111,26 +116,13 @@ class _AdminAccessState extends State<AdminAccess> {
                           onPressed: () async {
                             final ok = await confirmDialog(context, 'Reset password?', 'This replaces ${t.name}\'s password with a temporary one. Share it with them privately.', confirm: 'Reset');
                             if (!ok || !context.mounted) return;
-                            final tmp = app.resetPassword(t);
-                            await showDialog<void>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-                                title: const Text('Temporary password'),
-                                content: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(t.email, style: TextStyle(color: muted(ctx), fontSize: 13)),
-                                    const SizedBox(height: 10),
-                                    SelectableText(tmp, style: hd(24)),
-                                    const SizedBox(height: 10),
-                                    Text('Ask them to change it in Settings after signing in.', style: TextStyle(color: muted(ctx), fontSize: 13)),
-                                  ],
-                                ),
-                                actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done'))],
-                              ),
-                            );
+                            final r = await session.resetPassword(t);
+                            if (!context.mounted) return;
+                            if (r.error != null) {
+                              msg(context, r.error!);
+                              return;
+                            }
+                            await _showPassword(context, t.email, r.password ?? '');
                           },
                           icon: const Icon(Icons.lock_reset_rounded),
                           label: const Text('Reset password'),
@@ -139,14 +131,23 @@ class _AdminAccessState extends State<AdminAccess> {
                       const SizedBox(height: 10),
                       Row(
                         children: [
-                          Expanded(child: OutlinedButton(onPressed: () => app.toggleSuspend(t), child: Text(t.suspended ? 'Reactivate' : 'Suspend'))),
+                          Expanded(
+                              child: OutlinedButton(
+                                onPressed: () async {
+                                  final err = await session.setSuspended(t, !t.suspended);
+                                  if (err != null && context.mounted) msg(context, err);
+                                },
+                                child: Text(t.suspended ? 'Reactivate' : 'Suspend'),
+                              ),
+                            ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: OutlinedButton(
                               style: OutlinedButton.styleFrom(foregroundColor: danger),
                               onPressed: () async {
                                 if (await confirmDialog(context, 'Revoke access?', 'Permanently revoke access for ${t.name}? This removes their account and cannot be undone.', confirm: 'Revoke', destructive: true)) {
-                                  app.revoke(t);
+                                  final err = await session.deleteAccount(t);
+                                  if (err != null && context.mounted) msg(context, err);
                                 }
                               },
                               child: const Text('Revoke'),
@@ -159,6 +160,7 @@ class _AdminAccessState extends State<AdminAccess> {
                 ),
               ),
             if (s.isNotEmpty && list.isEmpty) EmptyBox('No accounts match "$q".', icon: Icons.search_off_rounded),
+            if (s.isEmpty && list.isEmpty) const EmptyBox('No resident accounts yet. Add the units first, then tap New account.', icon: Icons.person_add_alt_1_rounded),
             Text('Suspend keeps the account on file but blocks sign-in; Revoke permanently removes it and asks for confirmation first.',
                 style: TextStyle(color: muted(context), fontSize: 12)),
           ],
@@ -166,4 +168,29 @@ class _AdminAccessState extends State<AdminAccess> {
       },
     );
   }
+}
+
+Future<void> _showPassword(BuildContext context, String email, String password, {bool created = false}) {
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+      title: Text(created ? 'Account created' : 'Temporary password'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(email, style: TextStyle(color: muted(ctx), fontSize: 13)),
+          const SizedBox(height: 10),
+          SelectableText(password, style: hd(24)),
+          const SizedBox(height: 10),
+          Text(
+            'Give this password to the resident privately. It is shown only now. When they sign in, the app asks them to choose their own password.',
+            style: TextStyle(color: muted(ctx), fontSize: 13),
+          ),
+        ],
+      ),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done'))],
+    ),
+  );
 }

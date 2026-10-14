@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
+import '../../services/session.dart';
 import '../../widgets/widgets.dart';
 import '../../services/cloud_sync.dart' show CloudStatusLine;
 import 'resident_screens.dart';
@@ -74,7 +75,7 @@ class ResMore extends StatelessWidget {
         ]),
         OutlinedButton.icon(
           onPressed: () async {
-            if (await confirmDialog(context, 'Log out?', 'You will need to sign in again.', confirm: 'Log out')) app.logout();
+            if (await confirmDialog(context, 'Log out?', 'You will need to sign in again.', confirm: 'Log out')) session.signOut();
           },
           icon: const Icon(Icons.logout_rounded),
           label: const Text('Log out'),

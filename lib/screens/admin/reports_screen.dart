@@ -14,13 +14,12 @@ class AdminReports extends StatelessWidget {
       ];
 
   List<List<String>> _ageing() {
-    final open = app.dues.where((d) => !d.paid && !d.isCharge).toList();
-    int sum(bool Function(Due) f) => open.where(f).fold<int>(0, (s, d) => s + d.amt);
+    final open = app.dues.where((d) => !d.paid).toList();
+    num sum(bool Function(Due) f) => open.where(f).fold<num>(0, (s, d) => s + d.amt);
     int n(bool Function(Due) f) => open.where(f).length;
     return [
-      ['1 month', '${n((d) => d.months <= 1)}', peso(sum((d) => d.months <= 1))],
-      ['2 months', '${n((d) => d.months == 2)}', peso(sum((d) => d.months == 2))],
-      ['3 months or more', '${n((d) => d.months >= 3)}', peso(sum((d) => d.months >= 3))],
+      ['Open, not yet due', '${n((d) => !d.overdue)}', peso(sum((d) => !d.overdue))],
+      ['Overdue', '${n((d) => d.overdue)}', peso(sum((d) => d.overdue))],
     ];
   }
 
@@ -40,8 +39,8 @@ class AdminReports extends StatelessWidget {
         const ['Month', 'Collected'],
         for (var i = 0; i < labels.length; i++) [labels[i], peso(values[i])],
       ]),
-      const DocBlock.h2('Unpaid dues by age'),
-      DocBlock.table([const ['Overdue', 'Units', 'Amount'], ..._ageing()]),
+      const DocBlock.h2('Unpaid charges'),
+      DocBlock.table([const ['Status', 'Charges', 'Amount'], ..._ageing()]),
       const DocBlock.h2('How units are used'),
       DocBlock.table([const ['Status', 'Units'], ..._usage()]),
       const DocBlock.h2('Grievances'),
@@ -166,7 +165,7 @@ class AdminReports extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Unpaid dues by age', style: hd(17)),
+                  Text('Unpaid charges', style: hd(17)),
                   const SizedBox(height: 6),
                   _rows(context, _ageing()),
                 ],

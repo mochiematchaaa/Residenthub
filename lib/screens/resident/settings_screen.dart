@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
+import '../../services/session.dart';
 import '../../widgets/widgets.dart';
 import '../shared/profile_widgets.dart';
 
@@ -13,7 +14,6 @@ class ResSettings extends StatefulWidget {
 
 class _ResSettingsState extends State<ResSettings> {
   late final name = TextEditingController(text: app.me!.name);
-  late final email = TextEditingController(text: app.me!.email);
   late final phone = TextEditingController(text: app.me!.phone);
   final cur = TextEditingController();
   final nw = TextEditingController();
@@ -21,7 +21,7 @@ class _ResSettingsState extends State<ResSettings> {
 
   @override
   void dispose() {
-    for (final c in [name, email, phone, cur, nw, conf]) {
+    for (final c in [name, phone, cur, nw, conf]) {
       c.dispose();
     }
     super.dispose();
@@ -50,7 +50,7 @@ class _ResSettingsState extends State<ResSettings> {
                 const SizedBox(height: 14),
                 TextField(controller: name, decoration: const InputDecoration(labelText: 'Full name')),
                 const SizedBox(height: 10),
-                TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email address')),
+                TextField(enabled: false, controller: TextEditingController(text: app.me!.email), decoration: const InputDecoration(labelText: 'Email address (used to sign in)')),
                 const SizedBox(height: 10),
                 TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone number')),
                 const SizedBox(height: 10),
@@ -59,13 +59,9 @@ class _ResSettingsState extends State<ResSettings> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: () {
-                      if (name.text.trim().isEmpty || email.text.trim().isEmpty) {
-                        msg(context, 'Full name and email are required.');
-                        return;
-                      }
-                      app.saveProfile(name.text, email.text, phone.text);
-                      msg(context, 'Profile updated.');
+                    onPressed: () async {
+                      final err = await session.saveProfile(name.text, phone.text);
+                      if (context.mounted) msg(context, err ?? 'Profile updated.');
                     },
                     child: const Text('Save changes'),
                   ),
@@ -81,23 +77,23 @@ class _ResSettingsState extends State<ResSettings> {
                 const SizedBox(height: 4),
                 Text('Change the password used to sign in.', style: TextStyle(color: muted(context), fontSize: 12.5)),
                 const SizedBox(height: 14),
-                TextField(controller: cur, obscureText: true, decoration: const InputDecoration(labelText: 'Current password', hintText: 'Leave blank if you signed in without one')),
+                TextField(controller: cur, obscureText: true, decoration: const InputDecoration(labelText: 'Current password')),
                 const SizedBox(height: 10),
-                TextField(controller: nw, obscureText: true, decoration: const InputDecoration(labelText: 'New password', hintText: 'At least 6 characters')),
+                TextField(controller: nw, obscureText: true, decoration: const InputDecoration(labelText: 'New password', hintText: 'At least 8 characters')),
                 const SizedBox(height: 10),
                 TextField(controller: conf, obscureText: true, decoration: const InputDecoration(labelText: 'Confirm new password')),
                 const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: () {
-                      final err = app.changePassword(cur.text, nw.text, conf.text);
+                    onPressed: () async {
+                      final err = await session.changePassword(cur.text, nw.text, conf.text);
                       if (err == null) {
                         cur.clear();
                         nw.clear();
                         conf.clear();
                       }
-                      msg(context, err ?? 'Password updated.');
+                      if (context.mounted) msg(context, err ?? 'Password updated.');
                     },
                     child: const Text('Update password'),
                   ),
@@ -134,7 +130,7 @@ class _ResSettingsState extends State<ResSettings> {
                       if (s.current) ...[const SizedBox(width: 6), const Pill('This device', tone: Tone.good)],
                     ]),
                     subtitle: Text('${s.location} · ${s.when}'),
-                    trailing: s.current ? null : TextButton(onPressed: () => app.logoutSession(s.id), child: const Text('Log out', style: TextStyle(color: danger))),
+                    
                   ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
