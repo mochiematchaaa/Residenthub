@@ -202,6 +202,47 @@ class SessionService {
     return null;
   }
 
+  // ------------------------------------------------------------ forgot password (not signed in)
+
+  Future<Map<String, dynamic>> _reset(Map<String, dynamic> body) async {
+    try {
+      final r = await _c.functions.invoke('reset-password', body: body);
+      final d = r.data;
+      if (d is Map) return Map<String, dynamic>.from(d);
+      return {'error': 'Unexpected reply from the server.'};
+    } on FunctionException catch (e) {
+      final d = e.details;
+      if (d is Map && d['error'] != null) return {'error': d['error'].toString()};
+      return {'error': 'The server could not do that (${e.status}).'};
+    } catch (_) {
+      return {'error': 'Could not reach the server. Check your internet connection.'};
+    }
+  }
+
+  /// Asks for a password reset: a code goes to the email and another to the mobile number on file.
+  /// Returns an error, or null. The answer is the same whether or not the email has an account.
+  Future<String?> requestPasswordReset(String emailRaw) async {
+    final email = emailRaw.trim().toLowerCase();
+    if (!ready) return 'The app is not connected to the database.';
+    if (!RegExp(r'^\S+@\S+\.\S+$').hasMatch(email)) return 'Enter the email of your account.';
+    final r = await _reset({'action': 'request', 'email': email});
+    return r['error']?.toString();
+  }
+
+  /// Checks both codes and sets the new password. Returns an error, or null when it worked.
+  Future<String?> confirmPasswordReset(String emailRaw, String emailCode, String smsCode, String nw, String conf) async {
+    final bad = _checkNew(nw, conf);
+    if (bad != null) return bad;
+    final r = await _reset({
+      'action': 'confirm',
+      'email': emailRaw.trim().toLowerCase(),
+      'emailCode': emailCode.trim(),
+      'smsCode': smsCode.trim(),
+      'newPassword': nw,
+    });
+    return r['error']?.toString();
+  }
+
   Future<void> _finishVerification() async {
     app.contactVerifiedNow();
     unawaited(cloud.begin());
