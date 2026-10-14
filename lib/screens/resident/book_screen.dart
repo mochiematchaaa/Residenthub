@@ -143,6 +143,11 @@ class _ResBookState extends State<ResBook> {
                     ],
                   ),
                 ),
+                IconButton(
+                  tooltip: 'Clear selection',
+                  onPressed: () => setState(() => pick = null),
+                  icon: const Icon(Icons.close_rounded),
+                ),
                 FilledButton(
                   onPressed: () {
                     app.submitBooking(fac, pick!);
@@ -185,11 +190,17 @@ class _ResBookState extends State<ResBook> {
           borderRadius: BorderRadius.circular(14),
         ),
         alignment: Alignment.center,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
+          alignment: Alignment.center,
           children: [
-            Text(label, textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: picked ? Colors.white : t.fg)),
-            Text(booked ? 'Booked' : picked ? 'Selected' : 'Open', style: TextStyle(fontSize: 11, color: picked ? lav : t.fg)),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(label, textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: picked ? Colors.white : t.fg)),
+                Text(booked ? 'Booked' : picked ? 'Tap to clear' : 'Open', style: TextStyle(fontSize: 11, color: picked ? lav : t.fg)),
+              ],
+            ),
+            if (picked) const Positioned(top: 5, right: 7, child: Icon(Icons.close_rounded, size: 16, color: Colors.white)),
           ],
         ),
       ),
