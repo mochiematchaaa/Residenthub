@@ -30,6 +30,9 @@ class PaymentRecord {
 
 /// A resident's "I have paid" message with the reference number, waiting for
 /// the administrator to check it.
+/// What a motor parking payment is for. Same text as the website.
+const parkingPayFor = 'Motor parking rental';
+
 class PaymentProof {
   final int id;
   final String unit, payer, method, reference, date;
@@ -39,13 +42,17 @@ class PaymentProof {
 
   /// True for a payment the office recorded itself (no "I have paid" message from the resident).
   final bool direct;
+
+  /// For a parking payment: the slot the resident reserved.
+  final String slot;
   PaymentProof(this.id, this.unit, this.payer, this.method, this.reference,
       this.date, this.amount,
       {this.status = 'Pending',
       this.forText = '',
       this.receiptNo = '',
       this.confirmedOn = '',
-      this.direct = false});
+      this.direct = false,
+      this.slot = ''});
 
   /// Shared with the website through the live database (same field names).
   Map<String, dynamic> toJson() => {
@@ -61,6 +68,7 @@ class PaymentProof {
         'receiptNo': receiptNo,
         if (confirmedOn.isNotEmpty) 'confirmedOn': confirmedOn,
         if (direct) 'direct': true,
+        if (slot.isNotEmpty) 'slot': slot,
       };
 
   static PaymentProof? fromJson(Map<String, dynamic> j) {
@@ -82,6 +90,7 @@ class PaymentProof {
       receiptNo: s('receiptNo'),
       confirmedOn: s('confirmedOn'),
       direct: j['direct'] == true,
+      slot: s('slot'),
     );
   }
 }

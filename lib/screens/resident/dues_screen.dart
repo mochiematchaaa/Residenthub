@@ -61,6 +61,30 @@ class ResDues extends StatelessWidget {
             ],
           ),
         ),
+        if (app.myParkingReq != null && app.myParkingReq!.slot.isNotEmpty && app.myParkingReq!.amount > 0 && app.slotOf(app.myUnit) == null)
+          Builder(builder: (context) {
+            final r = app.myParkingReq!;
+            final proof = app.parkingProofFor(app.myUnit, r.slot);
+            return RCard(
+              child: Row(
+                children: [
+                  IconBadge(proof == null ? Icons.two_wheeler_rounded : Icons.schedule_rounded, accent: true),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Motor parking · ${r.slot}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                        Text('${peso(r.amount)} a month · ${proof == null ? 'waiting for your payment' : (proof.status == 'Confirmed' ? 'paid' : 'payment sent, waiting for the office')}',
+                            style: TextStyle(color: muted(context), fontSize: 12.5)),
+                      ],
+                    ),
+                  ),
+                  if (proof == null) FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(0, 38)), onPressed: () => sendParkingPayment(context), child: const Text('Pay')),
+                ],
+              ),
+            );
+          }),
         if (rows.isEmpty) const EmptyBox('No charges have been billed to your unit yet.', icon: Icons.receipt_long_outlined),
         if (rows.isNotEmpty)
         RCard(
@@ -200,7 +224,7 @@ class ResDues extends StatelessWidget {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(child: Text('${app.slots.length - app.slotsUsed} of ${app.slots.length} slots free', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14))),
+                  Expanded(child: Text('${app.freeSlotCount} of ${app.slots.length} slots free', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14))),
                   Text('Green = free · Red = taken', style: TextStyle(color: muted(context), fontSize: 11.5)),
                 ],
               ),
