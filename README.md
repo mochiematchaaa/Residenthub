@@ -31,6 +31,22 @@ after copying `pubspec.yaml`.
 - Turn off "Allow new users to sign up" in Supabase (Authentication > Sign In / Providers) so only the
   administrator can create accounts.
 
+## Verifying a new account (email code + text message code)
+A resident created by the administrator must, at first sign-in, choose a new password and then confirm the
+email address and the mobile number with two 6-digit codes. Until both are right the database shows the
+resident nothing (`my_unit()` returns an empty unit while `profiles.contact_verified_at` is null).
+Codes expire after 10 minutes, allow 5 tries, a new set can be requested every 60 seconds (5 per hour) and are
+stored only as hashes. The administrator is not asked for codes. If the administrator changes a resident's
+mobile number, that resident has to verify again.
+
+The Edge Function `supabase/functions/verify-contact` sends the codes. Set these in the Supabase dashboard under
+Edge Functions > Secrets (never in the app, the website or this repository):
+- Email (SMTP, port 465): `SMTP_HOST`, `SMTP_PORT` (465), `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
+  (for Gmail: host `smtp.gmail.com`, an App Password as the password).
+- Text message, one of:
+  - Twilio: `SMS_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM` (or `TWILIO_MESSAGING_SERVICE_SID`)
+  - Semaphore (Philippines): `SMS_PROVIDER=semaphore`, `SEMAPHORE_API_KEY`, optional `SEMAPHORE_SENDER`
+
 ## Project structure (one file per screen)
 ```
 lib/
