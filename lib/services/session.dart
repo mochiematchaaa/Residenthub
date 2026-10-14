@@ -22,6 +22,17 @@ class VerifyStart {
   const VerifyStart({this.error, this.email = '', this.phone = '', this.cooldown = 60, this.alreadyDone = false});
 }
 
+/// Which ways of getting a code are set up (text message and/or email), and where a code would go.
+class VerifyOptions {
+  final String? error;
+  final bool emailReady, smsReady, verified;
+  final String email, phone;
+  const VerifyOptions({this.error, this.emailReady = false, this.smsReady = false, this.verified = false, this.email = '', this.phone = ''});
+  bool get any => emailReady || smsReady;
+  /// "sms" when text messages are set up, else "email", else "".
+  String get first => smsReady ? 'sms' : (emailReady ? 'email' : '');
+}
+
 /// Signing in and out with Supabase Auth, the signed-in person's profile, and
 /// the administrator's account tools (create a resident account, reset a password, ...).
 class SessionService {
@@ -135,11 +146,18 @@ class SessionService {
   }
 
   Future<void> signOut() async {
-    await cloud.end();
+    // Never get stuck waiting for the server: a few seconds at most, then clear this device's sign-in.
+    try {
+      await cloud.end().timeout(const Duration(seconds: 3));
+    } catch (_) {}
     app.clearSession();
     try {
-      await _c.auth.signOut();
-    } catch (_) {}
+      await _c.auth.signOut().timeout(const Duration(seconds: 3));
+    } catch (_) {
+      try {
+        await _c.auth.signOut(scope: SignOutScope.local).timeout(const Duration(seconds: 3));
+      } catch (_) {}
+    }
   }
 
   // ------------------------------------------------------------ own account
@@ -179,9 +197,25 @@ class SessionService {
     }
   }
 
-  /// Emails one code and texts another. Returns where they went (masked) or an error.
-  Future<VerifyStart> sendVerificationCodes() async {
-    final r = await _verify({'action': 'send'});
+  /// Which ways of getting a code are set up, and where a code would go (masked).
+  Future<VerifyOptions> verifyOptions() async {
+    final r = await _verify({'action': 'options'});
+    if (r['error'] != null) return VerifyOptions(error: r['error'].toString());
+    if (r['verified'] == true) {
+      await _finishVerification();
+      return const VerifyOptions(verified: true);
+    }
+    return VerifyOptions(
+      emailReady: r['emailReady'] == true,
+      smsReady: r['smsReady'] == true,
+      email: (r['email'] ?? '').toString(),
+      phone: (r['phone'] ?? '').toString(),
+    );
+  }
+
+  /// Sends one code the way the person chose ('sms' or 'email'). Returns where it went or an error.
+  Future<VerifyStart> sendVerificationCode(String channel) async {
+    final r = await _verify({'action': 'send', 'channel': channel});
     if (r['error'] != null) return VerifyStart(error: r['error'].toString());
     if (r['verified'] == true) {
       await _finishVerification();
@@ -194,9 +228,9 @@ class SessionService {
     );
   }
 
-  /// Checks both codes. Returns an error message, or null when the account is verified.
-  Future<String?> checkVerificationCodes(String emailCode, String smsCode) async {
-    final r = await _verify({'action': 'check', 'emailCode': emailCode.trim(), 'smsCode': smsCode.trim()});
+  /// Checks the code. Returns an error message, or null when the account is verified.
+  Future<String?> checkVerificationCode(String channel, String code) async {
+    final r = await _verify({'action': 'check', 'channel': channel, 'code': code.trim()});
     if (r['error'] != null) return r['error'].toString();
     await _finishVerification();
     return null;
@@ -219,25 +253,32 @@ class SessionService {
     }
   }
 
-  /// Asks for a password reset: a code goes to the email and another to the mobile number on file.
+  /// Which ways of getting a reset code are set up. Nothing about any account is revealed.
+  Future<VerifyOptions> resetOptions() async {
+    final r = await _reset({'action': 'options'});
+    if (r['error'] != null) return VerifyOptions(error: r['error'].toString());
+    return VerifyOptions(emailReady: r['emailReady'] == true, smsReady: r['smsReady'] == true);
+  }
+
+  /// Asks for a password reset: one code goes the way the person chose ('sms' or 'email').
   /// Returns an error, or null. The answer is the same whether or not the email has an account.
-  Future<String?> requestPasswordReset(String emailRaw) async {
+  Future<String?> requestPasswordReset(String emailRaw, String channel) async {
     final email = emailRaw.trim().toLowerCase();
     if (!ready) return 'The app is not connected to the database.';
     if (!RegExp(r'^\S+@\S+\.\S+$').hasMatch(email)) return 'Enter the email of your account.';
-    final r = await _reset({'action': 'request', 'email': email});
+    final r = await _reset({'action': 'request', 'email': email, 'channel': channel});
     return r['error']?.toString();
   }
 
-  /// Checks both codes and sets the new password. Returns an error, or null when it worked.
-  Future<String?> confirmPasswordReset(String emailRaw, String emailCode, String smsCode, String nw, String conf) async {
+  /// Checks the code and sets the new password. Returns an error, or null when it worked.
+  Future<String?> confirmPasswordReset(String emailRaw, String channel, String code, String nw, String conf) async {
     final bad = _checkNew(nw, conf);
     if (bad != null) return bad;
     final r = await _reset({
       'action': 'confirm',
       'email': emailRaw.trim().toLowerCase(),
-      'emailCode': emailCode.trim(),
-      'smsCode': smsCode.trim(),
+      'channel': channel,
+      'code': code.trim(),
       'newPassword': nw,
     });
     return r['error']?.toString();
@@ -343,8 +384,8 @@ class SessionService {
       return const AccountResult(error: 'Enter a valid email address.');
     }
     if (unit.trim().isEmpty) return const AccountResult(error: "Assign a unit to confirm this resident's account.");
-    if (!AppState.validMobile(AppState.normalizePhone(phone))) {
-      return const AccountResult(error: 'Enter a valid Philippine mobile number, e.g. 0917 555 0112. A code is texted to it.');
+    if (phone.trim().isNotEmpty && !AppState.validMobile(AppState.normalizePhone(phone))) {
+      return const AccountResult(error: 'Enter a valid Philippine mobile number, e.g. 0917 555 0112, or leave it empty.');
     }
     final r = await _call({
       'action': 'create',

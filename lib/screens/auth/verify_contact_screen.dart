@@ -6,8 +6,8 @@ import '../../core/core.dart';
 import '../../services/session.dart';
 import '../../widgets/widgets.dart';
 
-/// Shown to a new resident before anything else: confirm the email address and the mobile
-/// number with two 6-digit codes (one by email, one by text message).
+/// Shown to a new resident before anything else: confirm the account with one 6-digit code,
+/// sent by text message or by email (the person chooses, among the ways that are set up).
 class VerifyContactScreen extends StatefulWidget {
   const VerifyContactScreen({super.key});
 
@@ -16,20 +16,36 @@ class VerifyContactScreen extends StatefulWidget {
 }
 
 class _VerifyContactScreenState extends State<VerifyContactScreen> {
-  final _email = TextEditingController();
-  final _sms = TextEditingController();
+  final _code = TextEditingController();
   bool _busy = false, _sent = false;
   String? _error;
-  String _sentEmail = '', _sentPhone = '';
+  VerifyOptions? _opts;
+  String _chan = '';
+  String _sentTo = '';
   int _wait = 0;
   Timer? _timer;
 
   @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
   void dispose() {
     _timer?.cancel();
-    _email.dispose();
-    _sms.dispose();
+    _code.dispose();
     super.dispose();
+  }
+
+  Future<void> _load() async {
+    final o = await session.verifyOptions();
+    if (!mounted) return;
+    setState(() {
+      _opts = o;
+      _chan = o.first;
+      _error = o.error;
+    });
   }
 
   void _startCountdown(int seconds) {
@@ -44,11 +60,12 @@ class _VerifyContactScreenState extends State<VerifyContactScreen> {
 
   Future<void> _send() async {
     FocusScope.of(context).unfocus();
+    if (_chan.isEmpty) return;
     setState(() {
       _busy = true;
       _error = null;
     });
-    final r = await session.sendVerificationCodes();
+    final r = await session.sendVerificationCode(_chan);
     if (!mounted) return;
     setState(() => _busy = false);
     if (r.alreadyDone) return;
@@ -56,12 +73,10 @@ class _VerifyContactScreenState extends State<VerifyContactScreen> {
       setState(() => _error = r.error);
       return;
     }
-    _email.clear();
-    _sms.clear();
+    _code.clear();
     setState(() {
       _sent = true;
-      _sentEmail = r.email;
-      _sentPhone = r.phone;
+      _sentTo = _chan == 'sms' ? r.phone : r.email;
     });
     _startCountdown(r.cooldown);
   }
@@ -72,7 +87,7 @@ class _VerifyContactScreenState extends State<VerifyContactScreen> {
       _busy = true;
       _error = null;
     });
-    final err = await session.checkVerificationCodes(_email.text, _sms.text);
+    final err = await session.checkVerificationCode(_chan, _code.text);
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -82,6 +97,8 @@ class _VerifyContactScreenState extends State<VerifyContactScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final o = _opts;
+    final way = _chan == 'sms' ? 'text message' : 'email';
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -97,35 +114,43 @@ class _VerifyContactScreenState extends State<VerifyContactScreen> {
                   const SizedBox(height: 6),
                   Text(
                     _sent
-                        ? 'We sent a code to $_sentEmail and a text message to $_sentPhone. Enter both codes. They expire in 10 minutes.'
-                        : 'For your security, confirm your email address and mobile number. We will send one code by email and one by text message.',
+                        ? 'We sent a code by $way to $_sentTo. Enter it below. It expires in 10 minutes.'
+                        : 'For your security, confirm your account. Choose how you want to get your code.',
                     style: TextStyle(color: muted(context), fontSize: 13, height: 1.4),
                   ),
                   const SizedBox(height: 16),
-                  if (!_sent)
+                  if (o == null)
+                    const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
+                  else if (!o.any)
+                    const Text('Verification codes are not available right now. Please try again later.',
+                        style: TextStyle(color: danger, fontSize: 12.5, fontWeight: FontWeight.w600))
+                  else if (!_sent) ...[
+                    ChannelPicker(
+                      smsReady: o.smsReady,
+                      emailReady: o.emailReady,
+                      value: _chan,
+                      phone: o.phone,
+                      email: o.email,
+                      onChanged: (v) => setState(() => _chan = v),
+                    ),
                     SizedBox(
                       width: double.infinity,
                       height: 52,
-                      child: FilledButton(onPressed: _busy ? null : _send, child: Text(_busy ? 'Sending…' : 'Send the codes')),
-                    )
-                  else ...[
-                    TextField(
-                      controller: _email,
-                      keyboardType: TextInputType.number,
-                      maxLength: 6,
-                      onChanged: (_) => setState(() => _error = null),
-                      decoration: const InputDecoration(labelText: 'Code from your email', prefixIcon: Icon(Icons.mail_outline_rounded), counterText: ''),
+                      child: FilledButton(onPressed: _busy ? null : _send, child: Text(_busy ? 'Sending…' : 'Send the code')),
                     ),
-                    const SizedBox(height: 12),
+                  ] else
                     TextField(
-                      controller: _sms,
+                      controller: _code,
                       keyboardType: TextInputType.number,
                       maxLength: 6,
                       onChanged: (_) => setState(() => _error = null),
                       onSubmitted: (_) => _check(),
-                      decoration: const InputDecoration(labelText: 'Code from the text message', prefixIcon: Icon(Icons.sms_outlined), counterText: ''),
+                      decoration: InputDecoration(
+                        labelText: '6-digit code',
+                        prefixIcon: Icon(_chan == 'sms' ? Icons.sms_outlined : Icons.mail_outline_rounded),
+                        counterText: '',
+                      ),
                     ),
-                  ],
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 10),
@@ -142,9 +167,17 @@ class _VerifyContactScreenState extends State<VerifyContactScreen> {
                       alignment: Alignment.centerLeft,
                       child: TextButton(
                         onPressed: (_busy || _wait > 0) ? null : _send,
-                        child: Text(_wait > 0 ? 'Send new codes in $_wait s' : 'Send new codes'),
+                        child: Text(_wait > 0 ? 'Send a new code in $_wait s' : 'Send a new code'),
                       ),
                     ),
+                    if (o != null && o.smsReady && o.emailReady)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: _busy ? null : () => setState(() { _sent = false; _error = null; }),
+                          child: const Text('Send it another way'),
+                        ),
+                      ),
                   ],
                   Align(
                     alignment: Alignment.centerRight,

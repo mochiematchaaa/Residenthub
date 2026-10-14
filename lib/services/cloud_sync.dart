@@ -43,6 +43,7 @@ class CloudSync extends ChangeNotifier {
   bool _ready = false, _pushing = false, _pushAgain = false, _dirtyRemote = false, _pulling = false;
   Timer? _pushTimer, _retryTimer, _refreshTimer;
   int _run = 0; // changes on every sign-in/out so late replies from an old session are ignored
+  DateTime? _lastRejected; // stops a refused change from being retried in a loop
 
   SupabaseClient get _client => Supabase.instance.client;
 
@@ -167,6 +168,41 @@ class CloudSync extends ChangeNotifier {
         v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{});
   }
 
+
+  /// What a resident may change on a unit record (the database refuses anything else).
+  static const _residentUnitKeys = ['usage', 'usageStatus', 'usageRemark', 'status', 'statusNote', 'statusDate'];
+
+  /// A unit written on the website may leave out fields the app fills in with a default (name,
+  /// contact, type...). Those are not changes, so leave the defaults out when comparing.
+  String _unitField(String key, dynamic v) {
+    final t = (v ?? '').toString();
+    if (key == 'usage' && t == 'owner') return '';
+    if (key == 'status' && t == 'Occupied') return '';
+    return t;
+  }
+
+  /// The update a resident may send for their unit: what is in the database, plus only the
+  /// fields they are allowed to change. Null when nothing they may change was changed.
+  CRow? _residentUnitUpdate(CRow want) {
+    final base = _known[want.key];
+    if (base == null) return null; // a resident can never create a unit
+    final changed = [
+      for (final k in _residentUnitKeys)
+        if (_unitField(k, want.value[k]) != _unitField(k, base.value[k])) k
+    ];
+    if (changed.isEmpty) return null;
+    final merged = Map<String, dynamic>.from(base.value);
+    for (final k in changed) {
+      final v = want.value[k];
+      if (_unitField(k, v).isEmpty) {
+        merged.remove(k);
+      } else {
+        merged[k] = v;
+      }
+    }
+    return CRow(want.kind, want.id, base.unit, merged);
+  }
+
   void _onChange(int run, PostgresChangePayload p) {
     if (run != _run || !_ready) return;
     final isDelete = p.eventType == PostgresChangeEvent.delete;
@@ -207,12 +243,19 @@ class CloudSync extends ChangeNotifier {
     }
     _pushing = true;
     var rejected = false;
+    var repeated = false; // refused twice in a row: do not keep retrying
     var offline = false;
     try {
+      final admin = app.role == Role.admin;
       final want = {for (final r in exportRows(app)) r.key: r};
       final inserts = <CRow>[], updates = <CRow>[];
       for (final e in want.entries) {
         if (_synced[e.key] == canonJson(e.value.value)) continue;
+        if (!admin && e.value.kind == 'unit') {
+          final u = _residentUnitUpdate(e.value);
+          if (u != null) updates.add(u);
+          continue;
+        }
         (_known.containsKey(e.key) ? updates : inserts).add(e.value);
       }
       final deletes = [
@@ -267,8 +310,11 @@ class CloudSync extends ChangeNotifier {
         '42501' => 'You do not have permission to do that.',
         _ => e.message,
       };
-      rootMessengerKey.currentState?.showSnackBar(SnackBar(content: Text('Not saved: $text')));
+      final again = _lastRejected != null && DateTime.now().difference(_lastRejected!).inSeconds < 10;
+      _lastRejected = DateTime.now();
+      if (!again) rootMessengerKey.currentState?.showSnackBar(SnackBar(content: Text('Not saved: $text')));
       if (run == _run) _set(CloudState.problem, 'Not saved · refreshing');
+      repeated = again;
     } catch (e) {
       offline = true;
       debugPrint('ResidentHub sync (write): $e');
@@ -284,9 +330,9 @@ class CloudSync extends ChangeNotifier {
           _pushAgain = false;
           unawaited(_pushDiff());
         } else if (rejected) {
-          // The database refused the change: show what it really holds.
+          // The database refused the change: show what it really holds (once, so it cannot loop).
           _dirtyRemote = false;
-          unawaited(_pull(run));
+          if (!repeated) unawaited(_pull(run));
         } else if (_dirtyRemote && !offline && _pushTimer?.isActive != true) {
           _dirtyRemote = false;
           unawaited(_pull(run));

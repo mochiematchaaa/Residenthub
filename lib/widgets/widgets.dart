@@ -1,4 +1,5 @@
 export 'backdrop.dart';
+export 'channel_picker.dart';
 export 'common.dart';
 export 'form_sheet.dart';
 export 'floating_nav.dart';
