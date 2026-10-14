@@ -134,7 +134,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   obscureText: !_show,
                   onChanged: (_) => setState(() => _error = null),
                   decoration: InputDecoration(
-                    labelText: 'New password (at least 8 characters)',
+                    labelText: 'New password',
                     prefixIcon: const Icon(Icons.lock_outline_rounded),
                     suffixIcon: IconButton(
                       icon: Icon(_show ? Icons.visibility_off_outlined : Icons.visibility_outlined),
@@ -142,6 +142,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     ),
                   ),
                 ),
+                PasswordRulesList(controller: _pw),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _pw2,

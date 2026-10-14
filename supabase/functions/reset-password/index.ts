@@ -30,6 +30,16 @@ const SAME_ANSWER =
   "If that email belongs to an account, we sent a code to it and a text message to the mobile number on file.";
 const BAD_CODES = "The codes are not correct or have expired. Ask for new codes.";
 
+/** The rules a new password must follow (the app and the website show the same checklist). */
+function passwordProblem(p: string): string | null {
+  if (p.length < 8) return "New password must be at least 8 characters.";
+  if (!/[A-Z]/.test(p)) return "New password needs an uppercase letter.";
+  if (!/[a-z]/.test(p)) return "New password needs a lowercase letter.";
+  if (!/\d/.test(p)) return "New password needs a number.";
+  if (!/[^A-Za-z0-9]/.test(p)) return "New password needs a symbol, e.g. ! @ # $ %.";
+  return null;
+}
+
 function newCode(): string {
   const n = crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000;
   return n.toString().padStart(6, "0");
@@ -166,7 +176,8 @@ Deno.serve(async (req: Request) => {
       const smsCode = String(body.smsCode ?? "").trim();
       const pw = String(body.newPassword ?? "");
       if (!/^\d{6}$/.test(emailCode) || !/^\d{6}$/.test(smsCode)) return reply({ error: "Enter both 6-digit codes." }, 400);
-      if (pw.length < 8) return reply({ error: "New password must be at least 8 characters." }, 400);
+      const rule = passwordProblem(pw);
+      if (rule) return reply({ error: rule }, 400);
       if (!eligible || !p) return reply({ error: BAD_CODES }, 400);
       const uid = p.id as string;
 

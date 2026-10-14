@@ -23,11 +23,20 @@ function validPhone(raw: string): boolean {
 }
 const PHONE_MSG = "Enter a valid Philippine mobile number, e.g. 0917 123 4567.";
 
-// Easy to read out loud: no 0/O or 1/l/I.
+// Easy to read out loud (no 0/O or 1/l/I) and always follows the password rules:
+// 12 characters with an uppercase letter, a lowercase letter, a number and a symbol.
 function tempPassword(): string {
-  const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  const bytes = crypto.getRandomValues(new Uint8Array(10));
-  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
+  const pick = (chars: string) => chars[crypto.getRandomValues(new Uint32Array(1))[0] % chars.length];
+  const lower = "abcdefghjkmnpqrstuvwxyz", upper = "ABCDEFGHJKMNPQRSTUVWXYZ", digits = "23456789", symbols = "#@!?%$";
+  const all = lower + upper + digits;
+  const out = [pick(lower), pick(upper), pick(digits), pick(symbols)];
+  while (out.length < 12) out.push(pick(all));
+  // shuffle (Fisher-Yates)
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out.join("");
 }
 
 Deno.serve(async (req: Request) => {

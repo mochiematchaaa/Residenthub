@@ -52,7 +52,7 @@ class _NewPasswordScreenState extends State<NewPasswordScreen> {
                   Text('Choose your password', style: hd(22)),
                   const SizedBox(height: 6),
                   Text(
-                    'The administrator gave you a temporary password. Choose your own now (at least 8 characters). Only you will know it.',
+                    'The administrator gave you a temporary password. Choose your own now. Only you will know it.',
                     style: TextStyle(color: muted(context), fontSize: 13, height: 1.4),
                   ),
                   const SizedBox(height: 16),
@@ -69,7 +69,8 @@ class _NewPasswordScreenState extends State<NewPasswordScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  PasswordRulesList(controller: _pass),
+                  const SizedBox(height: 10),
                   TextField(
                     controller: _conf,
                     obscureText: !_show,
