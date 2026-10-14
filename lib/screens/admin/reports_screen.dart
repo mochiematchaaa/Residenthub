@@ -24,8 +24,8 @@ class AdminReports extends StatelessWidget {
   }
 
   List<List<String>> _facility() => [
-        for (final f in AppState.facilities)
-          [f[0], '${app.bookings.where((b) => b.place == f[0] && b.status != 'Denied').length}'],
+        for (final f in app.amenities)
+          [f.name, '${app.bookings.where((b) => b.place == f.name && b.status != 'Denied').length}'],
       ];
 
   List<DocBlock> _blocks() {

@@ -242,7 +242,7 @@ class AdminHome extends StatelessWidget {
                     padding: const EdgeInsets.all(14),
                     child: Row(
                       children: [
-                        GlassIcon(upcoming[i].place == 'Swimming Pool' ? Icons.pool_rounded : Icons.celebration_rounded, size: 44),
+                        GlassIcon(amenityIcon(upcoming[i].place), size: 44),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(

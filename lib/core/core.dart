@@ -1,3 +1,4 @@
+export 'amenity.dart';
 export 'app_state.dart';
 export 'community.dart';
 export 'doc_model.dart';

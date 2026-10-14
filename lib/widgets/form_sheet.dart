@@ -30,6 +30,12 @@ class ToggleSpec {
   const ToggleSpec(this.key, this.label, this.initial);
 }
 
+/// A time of day picked from the clock. The value is "HH:MM" (24 hour).
+class TimeSpec {
+  final String key, label, initial;
+  const TimeSpec(this.key, this.label, this.initial);
+}
+
 /// Generic bottom-sheet form. [onSubmit] returns an error string to keep the
 /// sheet open, or null to close it.
 Future<void> showFormSheet(
@@ -39,6 +45,7 @@ Future<void> showFormSheet(
   List<FieldSpec> fields = const [],
   List<ChoiceSpec> choices = const [],
   List<ToggleSpec> toggles = const [],
+  List<TimeSpec> times = const [],
   required String submit,
   required FutureOr<String?> Function(Map<String, dynamic> v) onSubmit,
 }) {
@@ -48,7 +55,7 @@ Future<void> showFormSheet(
     useSafeArea: true,
     builder: (_) => _FormSheet(
       title: title, subtitle: subtitle, fields: fields, choices: choices,
-      toggles: toggles, submit: submit, onSubmit: onSubmit,
+      toggles: toggles, times: times, submit: submit, onSubmit: onSubmit,
     ),
   );
 }
@@ -59,10 +66,11 @@ class _FormSheet extends StatefulWidget {
   final List<FieldSpec> fields;
   final List<ChoiceSpec> choices;
   final List<ToggleSpec> toggles;
+  final List<TimeSpec> times;
   final FutureOr<String?> Function(Map<String, dynamic>) onSubmit;
   const _FormSheet({
     required this.title, this.subtitle, required this.fields, required this.choices,
-    required this.toggles, required this.submit, required this.onSubmit,
+    required this.toggles, this.times = const [], required this.submit, required this.onSubmit,
   });
 
   @override
@@ -87,6 +95,15 @@ class _FormSheetState extends State<_FormSheet> {
     for (final t in widget.toggles) {
       vals[t.key] = t.initial;
     }
+    for (final t in widget.times) {
+      vals[t.key] = t.initial;
+    }
+  }
+
+  Future<void> _pickTime(TimeSpec t) async {
+    final cur = toMinutes('${vals[t.key]}') ?? 480;
+    final r = await showTimePicker(context: context, initialTime: TimeOfDay(hour: cur ~/ 60, minute: cur % 60));
+    if (r != null && mounted) setState(() => vals[t.key] = hhmm(r.hour * 60 + r.minute));
   }
 
   @override
@@ -150,6 +167,30 @@ class _FormSheetState extends State<_FormSheet> {
                     decoration: InputDecoration(labelText: f.label, hintText: f.hint),
                   ),
                 ),
+            if (widget.times.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    for (var i = 0; i < widget.times.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 12),
+                      Expanded(
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: () => _pickTime(widget.times[i]),
+                          child: InputDecorator(
+                            decoration: InputDecoration(
+                              labelText: widget.times[i].label,
+                              suffixIcon: const Icon(Icons.schedule_rounded, size: 20),
+                            ),
+                            child: Text(timeLabel('${vals[widget.times[i].key]}'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             for (final c in widget.choices) ...[
               Text(c.label, style: TextStyle(fontWeight: FontWeight.w700, color: muted(context), fontSize: 13)),
               const SizedBox(height: 6),

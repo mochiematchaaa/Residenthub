@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import 'amenity.dart';
 import 'community.dart';
 import 'doc_model.dart';
 import 'doc_seed.dart';
@@ -377,6 +378,9 @@ class AppState extends ChangeNotifier {
     newStatusUpdates = 0;
     blocked.clear();
     blockedDay = '';
+    amenities
+      ..clear()
+      ..addAll(Amenity.defaults());
     bookings.clear();
     dues.clear();
     motorRate = 0;
@@ -453,27 +457,71 @@ class AppState extends ChangeNotifier {
 
   // ---------------------------------------------------------------- facilities
 
-  static const facilities = [
-    ['Swimming Pool', '6:00 AM – 8:00 PM'],
-    ['Function Hall', '8:00 AM – 10:00 PM'],
-  ];
-  static const slotTimes = [
-    '8–10 AM', '10–12 NN', '12–2 PM', '2–4 PM', '4–6 PM', '6–8 PM', '8–10 PM'
-  ];
+  /// The facilities residents can book. The administrator manages this list.
+  final List<Amenity> amenities = Amenity.defaults();
 
-  /// Slots the administrator closed, for the day in [blockedDay]. Keys look like "0-3".
+  /// Slots the administrator closed, for the day in [blockedDay]. Keys look like "pool-3"
+  /// (the amenity's id, then the slot number).
   final Map<String, bool> blocked = {};
   String blockedDay = '';
 
+  String _slotKey(int f, int i) => '${f < amenities.length ? amenities[f].id : f}-$i';
+
+  bool slotClosed(int f, int i) =>
+      blockedDay == dayKey(DateTime.now()) && (blocked[_slotKey(f, i)] ?? false);
+
   bool slotBooked(int f, int i) {
+    if (f >= amenities.length) return false;
     final today = dayKey(DateTime.now());
-    if (blockedDay == today && (blocked['$f-$i'] ?? false)) return true;
-    final place = facilities[f][0];
+    if (slotClosed(f, i)) return true;
+    final place = amenities[f].name;
     return bookings.any((b) =>
         b.day == today &&
         b.slot == i &&
         b.place == place &&
         (b.status == 'Pending' || b.status == 'Approved'));
+  }
+
+  /// Adds an amenity, or changes [edit]. Returns a message when something is wrong.
+  String? saveAmenity(Amenity? edit, String name, String open, String close, int mins, String note) {
+    name = name.trim();
+    if (name.isEmpty) return "Enter the amenity's name.";
+    final o = toMinutes(open), c = toMinutes(close);
+    if (o == null || c == null) return 'Choose the opening and closing time.';
+    if (c <= o) return 'The closing time must be after the opening time.';
+    if (mins < 15 || mins > 480) return 'A booking must be between 15 and 480 minutes.';
+    if (o + mins > c) return 'One booking is longer than the opening hours.';
+    if (amenities.any((a) => a != edit && a.name.toLowerCase() == name.toLowerCase())) return '$name already exists.';
+    if (edit == null) {
+      amenities.add(Amenity('a${DateTime.now().millisecondsSinceEpoch}', name, open, close, mins, note.trim()));
+      logActivity('Amenity added: $name', 'Facilities');
+    } else {
+      edit
+        ..name = name
+        ..open = open
+        ..close = close
+        ..mins = mins
+        ..note = note.trim();
+      logActivity('Amenity updated: $name', 'Facilities');
+    }
+    _n();
+    return null;
+  }
+
+  /// Today's requests that are still waiting or approved for [a].
+  int activeBookingsToday(Amenity a) {
+    final today = dayKey(DateTime.now());
+    return bookings
+        .where((b) => b.place == a.name && b.day == today && (b.status == 'Pending' || b.status == 'Approved'))
+        .length;
+  }
+
+  String? removeAmenity(Amenity a) {
+    if (amenities.length <= 1) return 'Keep at least one amenity so residents can still book.';
+    amenities.remove(a);
+    logActivity('Amenity removed: ${a.name}', 'Facilities');
+    _n();
+    return null;
   }
 
   final List<Booking> bookings = [];
@@ -854,10 +902,10 @@ class AppState extends ChangeNotifier {
     final now = DateTime.now();
     bookings.insert(
         0,
-        Booking(nextId(), myHousehold, myUnit, facilities[f][0],
-            '${shortDate(now)}, ${slotTimes[slot]}', 'Pending',
+        Booking(nextId(), myHousehold, myUnit, amenities[f].name,
+            '${shortDate(now)}, ${amenities[f].slots[slot]}', 'Pending',
             day: dayKey(now), slot: slot));
-    logActivity('Booking request for the ${facilities[f][0]}, $myUnit', 'Facilities');
+    logActivity('Booking request for the ${amenities[f].name}, $myUnit', 'Facilities');
     _n();
   }
 
@@ -929,7 +977,7 @@ class AppState extends ChangeNotifier {
       blocked.clear();
       blockedDay = today;
     }
-    final k = '$f-$i';
+    final k = _slotKey(f, i);
     blocked[k] = !(blocked[k] ?? false);
     _n();
   }

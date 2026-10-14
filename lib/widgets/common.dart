@@ -435,3 +435,18 @@ String initialsOf(String name) {
   if (parts.isEmpty) return '?';
   return parts.take(2).map((s) => s[0]).join().toUpperCase();
 }
+
+
+/// An icon that suits an amenity, judged by its name. Anything unknown gets a generic one.
+IconData amenityIcon(String name) {
+  final n = name.toLowerCase();
+  bool has(List<String> w) => w.any(n.contains);
+  if (has(['pool', 'swim'])) return Icons.pool_rounded;
+  if (has(['gym', 'fitness', 'workout'])) return Icons.fitness_center_rounded;
+  if (has(['basketball', 'court', 'tennis', 'badminton', 'sport'])) return Icons.sports_basketball_rounded;
+  if (has(['hall', 'function', 'party', 'event'])) return Icons.celebration_rounded;
+  if (has(['play', 'kid'])) return Icons.child_care_rounded;
+  if (has(['garden', 'park', 'rooftop', 'deck'])) return Icons.park_rounded;
+  if (has(['meeting', 'conference', 'study', 'lounge'])) return Icons.meeting_room_rounded;
+  return Icons.event_available_rounded;
+}
