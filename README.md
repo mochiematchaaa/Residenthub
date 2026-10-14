@@ -24,7 +24,7 @@ after copying `pubspec.yaml`.
   resident must choose a new password at first sign-in. The administrator can reset a password, suspend or delete
   a resident account. This runs through the Edge Function `supabase/functions/manage-users` (it uses the
   service role key on the server only; never put that key or the database password in the app).
-- Forgot password: residents ask the administrator for a reset.
+- Forgot password: the person enters their email, gets one 6-digit code by email and one by text message (Edge Function `supabase/functions/reset-password`, deployed with Verify JWT off because nobody is signed in), and chooses a new password with both codes. The reply never says whether an email has an account. Only a verified, active account can do this; otherwise the administrator resets the password in Manage access.
 - Data is stored in the table `public.records` (kind, id, unit, value) and `public.profiles`. Row-level security
   keeps residents to their own unit's rows (and the public ones: announcements, events, polls, slots...).
   Changes sync in real time between devices. The public URL and anon key are in `lib/services/supabase_config.dart`.
@@ -39,7 +39,7 @@ Codes expire after 10 minutes, allow 5 tries, a new set can be requested every 6
 stored only as hashes. The administrator is not asked for codes. If the administrator changes a resident's
 mobile number, that resident has to verify again.
 
-The Edge Function `supabase/functions/verify-contact` sends the codes. Set these in the Supabase dashboard under
+The Edge Functions `supabase/functions/verify-contact` (new accounts) and `reset-password` (forgot password) send the codes. Set these in the Supabase dashboard under
 Edge Functions > Secrets (never in the app, the website or this repository):
 - Email (SMTP, port 465): `SMTP_HOST`, `SMTP_PORT` (465), `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
   (for Gmail: host `smtp.gmail.com`, an App Password as the password).
