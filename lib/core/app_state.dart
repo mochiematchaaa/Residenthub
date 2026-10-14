@@ -174,11 +174,16 @@ class ParkingReq {
   final String unit, name;
   bool confirmed;
 
+  /// The slot the resident picked on the map ('' for an older request without one), and the
+  /// monthly rental that was charged when they picked it.
+  final String slot;
+  final num amount;
+
   /// Shown to the administrator ("Just now", "2 days ago") and used to keep requests in order.
   final String when;
   final int at;
   ParkingReq(this.unit, this.name,
-      {this.confirmed = false, this.when = 'Just now', int? at})
+      {this.confirmed = false, this.when = 'Just now', int? at, this.slot = '', this.amount = 0})
       : at = at ?? DateTime.now().millisecondsSinceEpoch;
 }
 
@@ -738,7 +743,8 @@ class AppState extends ChangeNotifier {
     p.status = 'Confirmed';
     p.receiptNo = nextReceiptNo();
     p.confirmedOn = shortDate(DateTime.now());
-    final due = _firstOpenDue(p.unit);
+    final isParking = p.forText == parkingPayFor;
+    final due = isParking ? null : _firstOpenDue(p.unit);
     final String forText;
     if (due != null) {
       due.paid = true;
@@ -749,6 +755,13 @@ class AppState extends ChangeNotifier {
     p.forText = forText;
     final rec = _addPayment(p.unit, p.payer, forText, p.method, p.reference, p.amount, proof: p);
     logActivity('Payment recorded, ${p.unit}', 'Finance');
+    // A paid parking reservation: the chosen slot goes to the resident straight away.
+    if (isParking && p.slot.isNotEmpty) {
+      final req = parking.where((r) => r.unit == p.unit && !r.confirmed && r.slot == p.slot).firstOrNull;
+      if (req != null && assignRequest(req) == null) {
+        logActivity('Parking slot ${p.slot} assigned to ${p.unit} (paid)', 'Parking');
+      }
+    }
     _n();
     return rec;
   }
@@ -1085,7 +1098,14 @@ class AppState extends ChangeNotifier {
 
   /// Gives the first free slot to a parking request. Returns an error message or null.
   String? assignRequest(ParkingReq p) {
-    final free = freeSlot;
+    ParkingSlot? free;
+    if (p.slot.isNotEmpty) {
+      free = slots.where((x) => x.id == p.slot).firstOrNull;
+      if (free == null) return '${p.slot} no longer exists. Decline this request.';
+      if (free.used) return '${p.slot} is already taken. Decline this request.';
+    } else {
+      free = freeSlot;
+    }
     if (free == null) return 'There are no free slots right now.';
     free.unit = p.unit;
     p.confirmed = true;
@@ -1103,9 +1123,65 @@ class AppState extends ChangeNotifier {
   }
 
   ParkingSlot? get freeSlot {
+    final held = heldSlots;
     for (final s in slots) {
-      if (!s.used) return s;
+      if (!s.used && !held.containsKey(s.id)) return s;
     }
+    return null;
+  }
+
+  /// Slots a resident picked and has not been approved for yet: slot name to unit.
+  Map<String, String> get heldSlots => {
+        for (final r in parking)
+          if (r.slot.isNotEmpty && !r.confirmed) r.slot: r.unit,
+      };
+
+  /// Slots nobody has and nobody holds.
+  int get freeSlotCount {
+    final held = heldSlots;
+    return slots.where((s) => !s.used && !held.containsKey(s.id)).length;
+  }
+
+  ParkingReq? get myParkingReq {
+    for (final r in parking) {
+      if (r.unit == myUnit) return r;
+    }
+    return null;
+  }
+
+  /// The latest payment a unit sent for a parking slot that was not rejected.
+  PaymentProof? parkingProofFor(String unit, String slot) {
+    for (final p in proofs) {
+      if (p.unit == unit && p.forText == parkingPayFor && p.slot == slot && p.status != 'Rejected') return p;
+    }
+    return null;
+  }
+
+  /// Resident: picks a free slot. The slot is held and the monthly rental becomes a charge.
+  String? reserveSlot(String id) {
+    if (myParkingReq != null || slotOf(myUnit) != null) return 'You already have a parking slot or reservation.';
+    final s = slots.where((x) => x.id == id).firstOrNull;
+    if (s == null || s.used || heldSlots.containsKey(id)) return 'That slot was just taken. Please pick another.';
+    parking.add(ParkingReq(myUnit, myHousehold, slot: id, amount: motorRate));
+    logActivity('Motor parking slot $id reserved, $myUnit', 'Parking');
+    _n();
+    return null;
+  }
+
+  /// Resident: "I have paid" for the reserved slot.
+  String? submitParkingProof(String method, String reference) {
+    final r = myParkingReq;
+    if (r == null || r.slot.isEmpty || r.amount <= 0) return 'Reserve a slot first.';
+    if (reference.trim().length < 4) return 'Enter the reference number from your receipt or transaction.';
+    if (proofs.any((p) => p.unit == myUnit && p.status != 'Rejected' && p.method == method && p.reference.toLowerCase() == reference.trim().toLowerCase())) {
+      return 'That reference number was already submitted.';
+    }
+    proofs.insert(
+        0,
+        PaymentProof(nextId(), myUnit, myHousehold, method, reference.trim(), shortDate(DateTime.now()), r.amount,
+            forText: parkingPayFor, slot: r.slot));
+    logActivity('Payment reference sent, $myUnit', 'Finance');
+    _n();
     return null;
   }
 
@@ -1169,10 +1245,15 @@ class AppState extends ChangeNotifier {
   }
 
   /// Resident: takes back a parking request the office has not answered yet.
-  void cancelMyParkingRequest() {
+  String? cancelMyParkingRequest() {
+    final r = myParkingReq;
+    if (r != null && r.slot.isNotEmpty && parkingProofFor(myUnit, r.slot) != null) {
+      return 'You already sent a payment for this slot. Please contact the office.';
+    }
     parking.removeWhere((r) => r.unit == myUnit && !r.confirmed);
     logActivity('Motor parking request cancelled, $myUnit', 'Parking');
     _n();
+    return null;
   }
 
   void assignSlot(ParkingSlot s, String unit) {

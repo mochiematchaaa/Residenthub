@@ -262,13 +262,13 @@ ParkingSlot? _slotFrom(Map<String, dynamic> j) {
 }
 
 Map<String, dynamic> _requestJson(ParkingReq r) =>
-    {'unit': r.unit, 'who': r.name, 'when': r.when, 'at': r.at, 'confirmed': r.confirmed};
+    {'unit': r.unit, 'who': r.name, 'when': r.when, 'at': r.at, 'confirmed': r.confirmed, 'slot': r.slot, 'amount': r.amount};
 
 ParkingReq? _requestFrom(Map<String, dynamic> j) {
   final unit = _s(j, 'unit');
   if (unit.isEmpty) return null;
   return ParkingReq(unit, _s(j, 'who'),
-      confirmed: _b(j, 'confirmed'), when: _s(j, 'when', 'Just now'), at: _i(j, 'at'));
+      confirmed: _b(j, 'confirmed'), when: _s(j, 'when', 'Just now'), at: _i(j, 'at'), slot: _s(j, 'slot'), amount: _num(j, 'amount'));
 }
 
 Map<String, dynamic> _paymentJson(PaymentRecord p) => {

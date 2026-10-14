@@ -307,7 +307,8 @@ class _AdminFinanceState extends State<AdminFinance> {
                         style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
                         onPressed: () {
                           final rec = app.confirmProof(p);
-                          msg(context, 'Payment confirmed. Receipt ${rec.receiptNo} issued.');
+                          final slot = p.forText == parkingPayFor ? app.slotOf(p.unit) : null;
+                          msg(context, slot != null ? 'Payment confirmed. ${slot.id} is now assigned to ${p.unit}. Receipt ${rec.receiptNo} issued.' : 'Payment confirmed. Receipt ${rec.receiptNo} issued.');
                         },
                         child: const Text('Confirm'),
                       ),

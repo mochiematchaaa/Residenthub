@@ -55,7 +55,7 @@ const directoryFaq = [
   ],
   [
     'How do I request motor parking?',
-    'Open Dues and use the Motor parking rental box. The office will assign a slot when one is free.'
+    'Open Parking, tap a free slot on the map and pay the monthly rental. When the office confirms your payment, the slot is yours.'
   ],
   [
     'How do I report a problem in the building?',
