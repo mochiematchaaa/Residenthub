@@ -1,8 +1,11 @@
 // "Forgot password" for people who are not signed in.
 //
-// action "request": { email }  - emails one 6-digit code and texts another to the numbers on the account.
+// The person picks ONE way to get the code: channel "sms" (text message through Twilio) or channel "email" (Gmail/SMTP).
+// action "options":                    - which ways are set up (nothing about any account)
+// action "request": { email, channel } - sends one 6-digit code that way. Without a channel both codes are sent (older app).
 //                                The answer is always the same, so nobody can find out which emails have accounts.
-// action "confirm": { email, emailCode, smsCode, newPassword } - when both codes are right the password is replaced.
+// action "confirm": { email, channel, code, newPassword } - when the code is right the password is replaced.
+//                   (older app: { email, emailCode, smsCode, newPassword } with both codes)
 //
 // Uses the same secrets as verify-contact (SMTP_* and SMS_PROVIDER + provider keys).
 // This function is called without a sign-in, so "Verify JWT" is off for it; it checks everything itself.
@@ -27,7 +30,7 @@ const MAX_ATTEMPTS = 5;
 const COOLDOWN_SECONDS = 60;
 const MAX_SENDS_PER_HOUR = 5;
 const SAME_ANSWER =
-  "If that email belongs to an account, we sent a code to it and a text message to the mobile number on file.";
+  "If that email belongs to an account, we sent a code the way you chose.";
 const BAD_CODES = "The codes are not correct or have expired. Ask for new codes.";
 
 /** The rules a new password must follow (the app and the website show the same checklist). */
@@ -59,6 +62,24 @@ function normalizePhone(raw: string): string | null {
   return /^9\d{9}$/.test(d) ? `+63${d}` : null;
 }
 
+function emailReady(): boolean {
+  return !!(Deno.env.get("SMTP_HOST") && Deno.env.get("SMTP_USER") && Deno.env.get("SMTP_PASS"));
+}
+function smsProvider(): string {
+  const p = (Deno.env.get("SMS_PROVIDER") ?? "").toLowerCase();
+  if (p) return p;
+  return Deno.env.get("TWILIO_ACCOUNT_SID") ? "twilio" : "";
+}
+function smsReady(): boolean {
+  const p = smsProvider();
+  if (p === "twilio") {
+    return !!(Deno.env.get("TWILIO_ACCOUNT_SID") && Deno.env.get("TWILIO_AUTH_TOKEN") &&
+      (Deno.env.get("TWILIO_FROM") || Deno.env.get("TWILIO_MESSAGING_SERVICE_SID")));
+  }
+  if (p === "semaphore") return !!Deno.env.get("SEMAPHORE_API_KEY");
+  return false;
+}
+
 async function sendEmail(to: string, code: string) {
   const host = Deno.env.get("SMTP_HOST"), user = Deno.env.get("SMTP_USER"), pass = Deno.env.get("SMTP_PASS");
   if (!host || !user || !pass) throw new Error("not set up");
@@ -78,7 +99,7 @@ async function sendEmail(to: string, code: string) {
 
 async function sendSms(to: string, code: string) {
   const text = `ResidentHub: your password reset code is ${code}. It expires in ${CODE_MINUTES} minutes. Do not share it.`;
-  const provider = (Deno.env.get("SMS_PROVIDER") ?? "").toLowerCase();
+  const provider = smsProvider();
   if (provider === "twilio") {
     const sid = Deno.env.get("TWILIO_ACCOUNT_SID"), token = Deno.env.get("TWILIO_AUTH_TOKEN");
     const from = Deno.env.get("TWILIO_FROM"), svc = Deno.env.get("TWILIO_MESSAGING_SERVICE_SID");
@@ -121,6 +142,8 @@ Deno.serve(async (req: Request) => {
     });
     const body = await req.json().catch(() => ({}));
     const action = String(body.action ?? "");
+    if (action === "options") return reply({ ok: true, emailReady: emailReady(), smsReady: smsReady() });
+    const channel = String(body.channel ?? "");
     const email = String(body.email ?? "").trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return reply({ error: "Enter a valid email address." }, 400);
 
@@ -138,7 +161,7 @@ Deno.serve(async (req: Request) => {
       const uid = p.id as string;
       const now = Date.now();
       const { data: rows } = await admin.from("reset_codes").select("*").eq("user_id", uid);
-      const prev = (rows ?? []).find((r) => r.channel === "email");
+      const prev = (rows ?? []).find((r) => r.channel === (channel === "sms" ? "sms" : "email"));
       if (prev && (now - new Date(prev.sent_at).getTime()) / 1000 < COOLDOWN_SECONDS) {
         return reply({ ok: true, message: SAME_ANSWER, cooldown: COOLDOWN_SECONDS });
       }
@@ -147,10 +170,12 @@ Deno.serve(async (req: Request) => {
       const sends = inWindow ? prev!.sends : 0;
       if (sends >= MAX_SENDS_PER_HOUR) return reply({ ok: true, message: SAME_ANSWER, cooldown: COOLDOWN_SECONDS });
 
+      if (channel && channel !== "email" && channel !== "sms") return reply({ error: "Choose email or text message." }, 400);
+      const useEmail = channel !== "sms", useSms = channel !== "email"; // no channel = both (older app)
       const emailCode = newCode(), smsCode = newCode();
       let failed = false;
-      try { await sendEmail(email, emailCode); } catch (_) { failed = true; }
-      try { await sendSms(phone!, smsCode); } catch (_) { failed = true; }
+      if (useEmail) { try { await sendEmail(email, emailCode); } catch (_) { failed = true; } }
+      if (useSms) { try { await sendSms(phone!, smsCode); } catch (_) { failed = true; } }
       if (failed) {
         // Same answer on the outside; the administrator can see the problem in the function logs.
         console.error("reset-password: a code could not be sent (check the SMTP and SMS secrets)");
@@ -164,11 +189,34 @@ Deno.serve(async (req: Request) => {
         window_start: windowStart.toISOString(),
         sends: sends + 1,
       };
-      await admin.from("reset_codes").upsert([
-        { ...common, channel: "email", code_hash: await hash(uid, "email", emailCode) },
-        { ...common, channel: "sms", code_hash: await hash(uid, "sms", smsCode) },
-      ]);
+      const out: Record<string, unknown>[] = [];
+      if (useEmail) out.push({ ...common, channel: "email", code_hash: await hash(uid, "email", emailCode) });
+      if (useSms) out.push({ ...common, channel: "sms", code_hash: await hash(uid, "sms", smsCode) });
+      if (channel) await admin.from("reset_codes").delete().eq("user_id", uid).eq("channel", channel === "email" ? "sms" : "email");
+      await admin.from("reset_codes").upsert(out);
       return reply({ ok: true, message: SAME_ANSWER, cooldown: COOLDOWN_SECONDS });
+    }
+
+    if (action === "confirm" && (channel === "email" || channel === "sms")) {
+      const code = String(body.code ?? "").trim();
+      const pw = String(body.newPassword ?? "");
+      if (!/^\d{6}$/.test(code)) return reply({ error: "Enter the 6-digit code." }, 400);
+      const rule = passwordProblem(pw);
+      if (rule) return reply({ error: rule }, 400);
+      if (!eligible || !p) return reply({ error: BAD_CODES }, 400);
+      const uid = p.id as string;
+      const { data: rows } = await admin.from("reset_codes").select("*").eq("user_id", uid);
+      const row = (rows ?? []).find((r) => r.channel === channel);
+      if (!row || new Date(row.expires_at).getTime() < Date.now() || row.attempts >= MAX_ATTEMPTS) return reply({ error: BAD_CODES }, 400);
+      if ((await hash(uid, channel, code)) !== row.code_hash) {
+        await admin.from("reset_codes").update({ attempts: row.attempts + 1 }).eq("user_id", uid).eq("channel", channel);
+        return reply({ error: BAD_CODES }, 400);
+      }
+      const { error } = await admin.auth.admin.updateUserById(uid, { password: pw });
+      if (error) return reply({ error: /password/i.test(error.message) ? error.message : "Could not change the password. Try again." }, 400);
+      await admin.from("profiles").update({ must_change_password: false }).eq("id", uid);
+      await admin.from("reset_codes").delete().eq("user_id", uid);
+      return reply({ ok: true });
     }
 
     if (action === "confirm") {
