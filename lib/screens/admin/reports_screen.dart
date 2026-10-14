@@ -118,7 +118,7 @@ class AdminReports extends StatelessWidget {
     return ListenableBuilder(
       listenable: app,
       builder: (context, _) {
-        final open = app.dues.where((d) => !d.paid).fold<int>(0, (s, d) => s + d.amt);
+        final open = app.dues.where((d) => !d.paid).fold<num>(0, (s, d) => s + d.amt);
         return SubPage(
           title: 'Reports',
           subtitle: 'A summary of collections, units, concerns and bookings.',
