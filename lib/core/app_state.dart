@@ -1,4 +1,4 @@
-import 'dart:math' as math;
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -7,6 +7,8 @@ import 'doc_model.dart';
 import 'doc_seed.dart';
 import 'expenses.dart';
 import 'payments.dart';
+
+part 'cloud_codec.dart';
 
 enum Role { resident, admin }
 
@@ -40,9 +42,11 @@ String usageLabel(String u) =>
 
 // ---------------------------------------------------------------- models
 
+String dayKey(DateTime d) =>
+    '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
 class Unit {
   String unit, name, type, status, contact;
-  int overdue;
   String usage; // current unit state: owner | tenant | shortterm | business | vacant | away | renovation
   String statusNote, statusDate;
 
@@ -51,8 +55,7 @@ class Unit {
 
   /// The administrator's note shown to the resident when a declaration is rejected.
   String usageRemark;
-  Unit(this.unit, this.name, this.type, this.status, this.contact, this.overdue,
-      this.usage,
+  Unit(this.unit, this.name, this.type, this.status, this.contact, this.usage,
       {this.statusNote = '', this.statusDate = '', this.usageStatus = '', this.usageRemark = ''});
 
   /// Short-term rentals and home businesses need the administrator's approval.
@@ -61,8 +64,9 @@ class Unit {
 
 /// One entry in a unit's status history (also drives the admin's update feed).
 class StatusUpdate {
+  final int id;
   final String unit, key, note, date, by; // by: 'Resident' | 'Admin'
-  const StatusUpdate(this.unit, this.key, this.note, this.date, this.by);
+  const StatusUpdate(this.id, this.unit, this.key, this.note, this.date, this.by);
 }
 
 /// One line in the administrator's "Recent activity" list.
@@ -76,27 +80,39 @@ class Booking {
   final int id;
   final String who, unit, place, when;
   String status; // Pending | Approved | Denied | Completed
-  Booking(this.id, this.who, this.unit, this.place, this.when, this.status);
+
+  /// The day it is for (yyyy-mm-dd) and the time slot number, so two units cannot book the same slot.
+  final String day;
+  final int slot;
+  Booking(this.id, this.who, this.unit, this.place, this.when, this.status,
+      {this.day = '', this.slot = -1});
 }
 
+/// One charge billed to a unit: monthly association dues, a damage fee, and so on.
 class Due {
   final int id;
-  final String unit, name;
-  final int months;
-  bool paid = false;
+  final String unit, name, note;
+  final num amount;
 
-  /// One-off charge (e.g. a damage fee): [months] is 0 and [note] says what it is for.
-  final int? customAmount;
-  final String note;
-  Due(this.id, this.unit, this.name, this.months, {this.customAmount, this.note = ''});
-  bool get isCharge => customAmount != null;
-  int get amt => customAmount ?? months * 450;
-  String get label => isCharge ? note : '$months month${months == 1 ? '' : 's'} overdue';
+  /// Due date written like "Oct 15, 2026" (empty = due upon receipt).
+  final String dueDate;
+  bool paid;
+  Due(this.id, this.unit, this.name, this.amount, this.note, {this.dueDate = '', this.paid = false});
+  num get amt => amount;
+  bool get isCharge => true;
+  String get label => note;
+
+  /// Unpaid and past its due date.
+  bool get overdue {
+    if (paid || dueDate.isEmpty) return false;
+    final d = parseShortDate(dueDate);
+    return d != null && DateTime.now().isAfter(d.add(const Duration(days: 1)));
+  }
 }
 
 class MonthDue {
   final String month, due, status;
-  final int amt;
+  final num amt;
   MonthDue(this.month, this.amt, this.due, this.status);
 }
 
@@ -119,21 +135,22 @@ class Announcement {
 class EventItem {
   final int id;
   final String title, date, place, about;
-  final int going; // residents already going, before the signed-in resident's own RSVP
-  EventItem(this.id, this.title, this.date, this.place, {this.about = '', this.going = 0});
+  EventItem(this.id, this.title, this.date, this.place, {this.about = ''});
 }
 
+/// One sign-in account (a row of the profiles table), shown in Manage access.
 class Account {
+  final String id;
   String name, email, phone, unit, role, added;
   bool suspended;
-  Account(this.name, this.email, this.phone, this.unit, this.role, this.added,
+  Account(this.id, this.name, this.email, this.phone, this.unit, this.role, this.added,
       {this.suspended = false});
 }
 
 class ResidentUser {
-  String name, unit, email, phone, password;
+  String name, unit, email, phone;
   Uint8List? photo;
-  ResidentUser(this.name, this.unit, this.email, this.phone, this.password);
+  ResidentUser(this.name, this.unit, this.email, this.phone);
   String get unitLabel => unit.split(' · ').first;
 }
 
@@ -166,9 +183,35 @@ class AppState extends ChangeNotifier {
   ResidentUser? me;
   int resTab = 0;
   int adminTab = 0;
-  int _id = 1000;
-  int nextId() => _id++;
+
+  /// Id of the signed-in account (the Supabase user id).
+  String userId = '';
+
+  /// True while the app checks whether a sign-in from last time is still valid.
+  bool booting = true;
+
+  /// True after the administrator created or reset this account: a new password must be chosen.
+  bool mustChangePassword = false;
+
+  /// True once the first copy of the shared data has arrived after signing in.
+  bool loaded = false;
+
+  int _lastId = 0;
+
+  /// An id that is unique across devices (milliseconds), so the app and the website never clash.
+  int nextId() {
+    var t = DateTime.now().millisecondsSinceEpoch;
+    if (t <= _lastId) t = _lastId + 1;
+    _lastId = t;
+    return t;
+  }
+
+  int cloudId() => nextId();
+
   void _n() => notifyListeners();
+
+  /// Called by the sync after it has changed the data.
+  void changed() => _n();
 
   void toggleDark() {
     dark = !dark;
@@ -185,62 +228,14 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
-  // ---- seed data (copied from the web demo) ----
-  final List<ResidentUser> residents = [
-    ResidentUser('Maria Santos', 'Unit 12A · Owner',
-        'maria.santos@cityresidences.ph', '0917 555 0112', 'resident123'),
-    ResidentUser('Jessele Fugaban', 'Unit 6B · Owner',
-        'jessele.fugaban@cityresidences.ph', '0917 555 0145', 'resident123'),
-  ];
-
-  final List<Account> trusted = [
-    Account('Maria Santos', 'maria.santos@cityresidences.ph', '0917 555 0112',
-        'Unit 12A', 'Resident', 'Aug 1, 2026'),
-    Account('Jessele Fugaban', 'jessele.fugaban@cityresidences.ph', '0917 555 0145',
-        'Unit 6B', 'Resident', 'Aug 1, 2026'),
-  ];
-  static const _baseAdminLogins = [
-    'joseph', 'joseph capili', 'joseph.capili', 'owner', 'admin',
-    'owner@cityresidences.ph'
-  ];
-
-  /// Names that sign in as the administrator (includes the e-mail set in the profile).
-  List<String> get adminLogins => [..._baseAdminLogins, adminEmail.trim().toLowerCase()];
-
-  // ---- administrator profile (editable in More > Settings) ----
-  String adminName = 'Joseph Capili';
-  String adminEmail = 'owner@cityresidences.ph';
+  // ---- administrator profile (read from the account) ----
+  String adminName = '';
+  String adminEmail = '';
   String adminPhone = '';
   Uint8List? adminPhoto;
   String get adminFirstName {
     final parts = adminName.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
     return parts.isEmpty ? 'Admin' : parts.first;
-  }
-
-  String? saveAdminProfile(String name, String email, String phone) {
-    if (name.trim().isEmpty) return 'Enter your name.';
-    final e = email.trim();
-    if (!RegExp(r'^\S+@\S+\.\S+$').hasMatch(e)) return 'Enter a valid email address.';
-    final lower = e.toLowerCase();
-    if (residents.any((r) => r.email.toLowerCase() == lower) || trusted.any((t) => t.email.toLowerCase() == lower)) {
-      return 'That email belongs to a resident account.';
-    }
-    final ph = phone.trim();
-    if (ph.isNotEmpty && !validMobile(normalizePhone(ph))) return 'Enter a valid mobile number, e.g. 0917 555 0112.';
-    adminName = name.trim();
-    adminEmail = e;
-    adminPhone = ph;
-    _n();
-    return null;
-  }
-
-  String? changeAdminPassword(String cur, String nw, String conf) {
-    if (cur != adminPassword) return "Current password doesn't match.";
-    if (nw.length < 6) return 'New password must be at least 6 characters.';
-    if (nw != conf) return "New password and confirmation don't match.";
-    adminPassword = nw;
-    _n();
-    return null;
   }
 
   void setAdminPhoto(Uint8List? bytes) {
@@ -255,31 +250,194 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
-  final List<Unit> units = [
-    Unit('Unit 12A', 'Reyes Household', 'Owner', 'Occupied', '0917 555 0112', 1, 'owner'),
-    Unit('Unit 7C', 'Garcia Household', 'Tenant', 'Occupied', '0917 555 0234', 1, 'tenant'),
-    Unit('Unit 3B', 'Villanueva Household', 'Owner', 'Occupied', '0917 555 0311', 2, 'shortterm',
-        statusNote: 'Listed on Airbnb.', statusDate: 'Mar 12, 2026', usageStatus: 'approved'),
-    Unit('Unit 15D', 'Mendoza Household', 'Tenant', 'Occupied', '0917 555 0455', 1, 'tenant'),
-    Unit('Unit 9A', 'Cruz Household', 'Owner', 'Occupied', '0917 555 0567', 3, 'owner'),
-    Unit('Unit 21B', 'Santos Household', 'Owner', 'Occupied', '0917 555 0678', 1, 'business',
-        statusNote: 'Online reselling of home goods.', statusDate: 'Sep 28, 2026', usageStatus: 'pending'),
-    Unit('Unit 5A', '—', '—', 'Vacant', '—', 2, 'vacant', statusNote: 'No tenant yet.', statusDate: 'Sep 1, 2026'),
-    Unit('Unit 18C', 'Aquino Household', 'Tenant', 'Occupied', '0917 555 0891', 1, 'tenant'),
-    Unit('Unit 4D', 'Reyes-Torres Household', 'Owner', 'Occupied', '0917 555 0932', 0, 'owner'),
-    Unit('Unit 11B', 'Fernandez Household', 'Owner', 'Occupied', '0917 555 1007', 0, 'owner'),
-    Unit('Unit 6B', 'Fugaban Household', 'Owner', 'Occupied', '0917 555 0145', 0, 'owner'),
-  ];
+  /// Accounts shown in Manage access (loaded from the database for the administrator).
+  final List<Account> trusted = [];
+
+  void setAccounts(List<Account> list) {
+    trusted
+      ..clear()
+      ..addAll(list);
+    _n();
+  }
+
+  /// Mobile numbers of the resident accounts (used to text announcements).
+  List<String> get residentPhones => [
+        for (final a in trusted)
+          if (a.role == 'Resident' && validMobile(normalizePhone(a.phone))) normalizePhone(a.phone),
+      ];
+
+  static String normalizePhone(String raw) {
+    var d = raw.replaceAll(RegExp(r'\D'), '');
+    if (d.startsWith('63') && d.length == 12) d = '0${d.substring(2)}';
+    return d;
+  }
+
+  static bool validMobile(String normalized) => RegExp(r'^09\d{9}$').hasMatch(normalized);
+
+  // ---------------------------------------------------------------- session
+
+  /// Accounts live in Supabase Auth; the only session shown is this device.
+  List<SessionInfo> sessions = [];
+
+  static String _deviceLabel() {
+    if (kIsWeb) return 'Web browser · ResidentHub';
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.android => 'Android phone · ResidentHub app',
+      TargetPlatform.iOS => 'iPhone · ResidentHub app',
+      _ => 'Computer · ResidentHub',
+    };
+  }
+
+  static String _clock(DateTime t) {
+    final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    return '$h:${t.minute.toString().padLeft(2, '0')} ${t.hour >= 12 ? 'PM' : 'AM'}';
+  }
+
+  /// Called by services/session.dart once Supabase has signed the person in.
+  void enterSession({
+    required Role role,
+    required String id,
+    required String name,
+    required String email,
+    required String phone,
+    required String unit,
+    required bool mustChange,
+  }) {
+    clearData();
+    this.role = role;
+    userId = id;
+    mustChangePassword = mustChange;
+    if (role == Role.admin) {
+      adminName = name.trim().isEmpty ? 'Administrator' : name.trim();
+      adminEmail = email;
+      adminPhone = phone;
+      me = null;
+    } else {
+      me = ResidentUser(name.trim().isEmpty ? email : name.trim(), unit, email, phone);
+    }
+    sessions = [SessionInfo(1, _deviceLabel(), 'Signed in at ${_clock(DateTime.now())}', 'Active now', true)];
+    resTab = 0;
+    adminTab = 0;
+    booting = false;
+    _n();
+  }
+
+  void finishBoot() {
+    booting = false;
+    _n();
+  }
+
+  void passwordChanged() {
+    mustChangePassword = false;
+    _n();
+  }
+
+  void setMyProfile(String name, String phone) {
+    final u = me;
+    if (u != null) {
+      u.name = name;
+      u.phone = phone;
+    } else {
+      adminName = name;
+      adminPhone = phone;
+    }
+    _n();
+  }
+
+  /// Signs out on this device and empties everything that was loaded.
+  void clearSession() {
+    role = null;
+    me = null;
+    userId = '';
+    mustChangePassword = false;
+    resTab = 0;
+    adminTab = 0;
+    clearData();
+    _n();
+  }
+
+  void clearData() {
+    loaded = false;
+    units.clear();
+    statusUpdates.clear();
+    newStatusUpdates = 0;
+    blocked.clear();
+    blockedDay = '';
+    bookings.clear();
+    dues.clear();
+    motorRate = 0;
+    duesRate = 0;
+    parking.clear();
+    slots.clear();
+    payments.clear();
+    proofs.clear();
+    expenses.clear();
+    grievances.clear();
+    docs.removeWhere((d) => !d.isLive);
+    announcements.clear();
+    events.clear();
+    polls.clear();
+    _votes.clear();
+    _rsvps.clear();
+    activityLog.clear();
+    trusted.clear();
+    directoryContacts.clear();
+    houseRules.clear();
+    annualBudget.clear();
+    for (final m in payMethods) {
+      m.enabled = m.name == officePay;
+      m.details = _defaultDetails[m.name] ?? '';
+    }
+  }
+
+  // ---------------------------------------------------------------- units
+
+  final List<Unit> units = [];
 
   /// Newest first. Residents and the admin both post here.
-  final List<StatusUpdate> statusUpdates = [
-    const StatusUpdate('Unit 21B', 'business', 'Online reselling of home goods.', 'Sep 28, 2026', 'Resident'),
-    const StatusUpdate('Unit 5A', 'vacant', 'No tenant yet.', 'Sep 1, 2026', 'Admin'),
-    const StatusUpdate('Unit 12A', 'owner', 'Back home after a month away.', 'Aug 20, 2026', 'Resident'),
-    const StatusUpdate('Unit 12A', 'away', 'Out of the country until August 20.', 'Jul 18, 2026', 'Resident'),
-    const StatusUpdate('Unit 3B', 'shortterm', 'Listed on Airbnb.', 'Mar 12, 2026', 'Resident'),
-  ];
-  int newStatusUpdates = 1; // resident updates the admin has not opened yet
+  final List<StatusUpdate> statusUpdates = [];
+  int newStatusUpdates = 0; // resident updates the admin has not opened yet
+
+  /// Admin: adds a unit. The unit name is what ties accounts, charges and bookings together.
+  String? addUnit(String unitRaw, String household, String type, String contact) {
+    var label = unitRaw.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (label.isEmpty) return 'Enter the unit name, e.g. Unit 12A.';
+    if (!label.toLowerCase().startsWith('unit ')) label = 'Unit $label';
+    label = 'Unit ${label.substring(5).trim().toUpperCase()}';
+    if (units.any((u) => u.unit.toLowerCase() == label.toLowerCase())) return '$label already exists.';
+    units.add(Unit(label, household.trim().isEmpty ? '—' : household.trim(), type,
+        'Occupied', contact.trim().isEmpty ? '—' : contact.trim(), 'owner'));
+    units.sort((a, b) => naturalCompare(a.unit, b.unit));
+    logActivity('Unit added: $label', 'Units');
+    _n();
+    return null;
+  }
+
+  /// Admin: edits the household details of a unit.
+  void updateUnit(Unit u, String household, String type, String contact) {
+    u.name = household.trim().isEmpty ? '—' : household.trim();
+    u.type = type;
+    u.contact = contact.trim().isEmpty ? '—' : contact.trim();
+    _n();
+  }
+
+  /// Admin: removes a unit that has no account. Returns an error message or null.
+  String? removeUnit(Unit u) {
+    if (trusted.any((a) => a.unit == u.unit && a.role == 'Resident')) {
+      return 'An account is still assigned to ${u.unit}. Remove that account first.';
+    }
+    units.remove(u);
+    dues.removeWhere((d) => d.unit == u.unit);
+    logActivity('Unit removed: ${u.unit}', 'Units');
+    _n();
+    return null;
+  }
+
+  int unpaidCountFor(String unit) => dues.where((d) => d.unit == unit && !d.paid).length;
+  num balanceFor(String unit) =>
+      dues.where((d) => d.unit == unit && !d.paid).fold<num>(0, (s, d) => s + d.amt);
+
+  // ---------------------------------------------------------------- facilities
 
   static const facilities = [
     ['Swimming Pool', '6:00 AM – 8:00 PM'],
@@ -288,73 +446,50 @@ class AppState extends ChangeNotifier {
   static const slotTimes = [
     '8–10 AM', '10–12 NN', '12–2 PM', '2–4 PM', '4–6 PM', '6–8 PM', '8–10 PM'
   ];
-  static const baseBooked = [
-    [4, 6],
-    [0, 2]
-  ];
-  final Map<String, bool> blocked = {}; // admin toggles "f-i"
-  final Set<String> mySlots = {}; // resident submitted "f-i"
+
+  /// Slots the administrator closed, for the day in [blockedDay]. Keys look like "0-3".
+  final Map<String, bool> blocked = {};
+  String blockedDay = '';
 
   bool slotBooked(int f, int i) {
-    final base = baseBooked[f].contains(i);
-    final b = blocked['$f-$i'] ?? false;
-    return (base != b) || mySlots.contains('$f-$i');
+    final today = dayKey(DateTime.now());
+    if (blockedDay == today && (blocked['$f-$i'] ?? false)) return true;
+    final place = facilities[f][0];
+    return bookings.any((b) =>
+        b.day == today &&
+        b.slot == i &&
+        b.place == place &&
+        (b.status == 'Pending' || b.status == 'Approved'));
   }
 
-  final List<Booking> bookings = [
-    Booking(1, 'Reyes Household', 'Unit 12A', 'Function Hall', 'Oct 3, 6:00 PM – 10:00 PM', 'Pending'),
-    Booking(2, 'Cruz Household', 'Unit 9A', 'Swimming Pool', 'Tomorrow, 3:00 PM – 5:00 PM', 'Pending'),
-    Booking(3, 'Garcia Household', 'Unit 7C', 'Function Hall', 'Sat, 2:00 PM – 6:00 PM', 'Pending'),
-    Booking(4, 'Villanueva Household', 'Unit 3B', 'Swimming Pool', 'Oct 5, 1:00 PM – 4:00 PM', 'Pending'),
-    Booking(5, 'Reyes Household', 'Unit 12A', 'Function Hall', 'Saturday, 2:00 PM – 6:00 PM', 'Approved'),
-    Booking(6, 'Reyes Household', 'Unit 12A', 'Function Hall', 'Sep 10, 6:00 PM – 9:00 PM', 'Completed'),
-    Booking(7, 'Reyes Household', 'Unit 12A', 'Swimming Pool', 'Sep 2, 3:00 PM – 5:00 PM', 'Completed'),
-  ];
+  final List<Booking> bookings = [];
 
-  final List<Due> dues = [
-    Due(1, 'Unit 12A', 'Reyes Household', 1),
-    Due(2, 'Unit 7C', 'Garcia Household', 1),
-    Due(3, 'Unit 3B', 'Villanueva Household', 2),
-    Due(4, 'Unit 15D', 'Mendoza Household', 1),
-    Due(5, 'Unit 9A', 'Cruz Household', 3),
-    Due(6, 'Unit 21B', 'Santos Household', 1),
-    Due(7, 'Unit 5A', 'Vacant unit', 2),
-    Due(8, 'Unit 18C', 'Aquino Household', 1),
-  ];
-  num motorRate = 500;
-  final List<ParkingReq> parking = [
-    ParkingReq('Unit 4D', 'Reyes-Torres Household', when: '2 days ago', at: 1),
-    ParkingReq('Unit 11B', 'Fernandez Household', when: 'Yesterday', at: 2),
-  ];
-  final List<ParkingSlot> slots = seedSlots();
+  // ---------------------------------------------------------------- finance
 
-  // ---- payment options, proofs and receipts ----
-  // The account details below are SAMPLE text. The administrator edits them in
-  // Finance > Payment options before the app is handed over.
+  final List<Due> dues = [];
+  num motorRate = 0;
+
+  /// What one unit pays each month in association dues (set by the administrator).
+  num duesRate = 0;
+  final List<ParkingReq> parking = [];
+  final List<ParkingSlot> slots = [];
+
+  // The account details are filled in by the administrator in Finance > Payment options.
   static const officePay = 'Cash or check at the office';
+  static const _defaultDetails = <String, String>{
+    officePay: 'Pay at the administration office.',
+    'Bank transfer': 'Account name: (add account name)\nBank: (add bank name)\nAccount no.: (add account number)',
+    'GCash': 'Account name: (add name)\nNumber: (add GCash number)',
+    'Maya': 'Account name: (add name)\nNumber: (add Maya number)',
+  };
   final List<PayMethod> payMethods = [
-    PayMethod(officePay,
-        'Administration office, ground floor. Monday to Saturday, 8:00 AM - 5:00 PM.'),
-    PayMethod('Bank transfer',
-        'Account name: City Residences Condominium Corp.\nBank: (add bank name)\nAccount no.: (add account number)'),
-    PayMethod('GCash', 'Account name: (add name)\nNumber: (add GCash number)'),
-    PayMethod('Maya', 'Account name: (add name)\nNumber: (add Maya number)'),
+    PayMethod(officePay, _defaultDetails[officePay]!),
+    PayMethod('Bank transfer', _defaultDetails['Bank transfer']!, enabled: false),
+    PayMethod('GCash', _defaultDetails['GCash']!, enabled: false),
+    PayMethod('Maya', _defaultDetails['Maya']!, enabled: false),
   ];
 
-  final List<PaymentRecord> payments = [
-    const PaymentRecord(6, 'OR-2026-0006', 'Unit 6B', 'Jessele Fugaban', '1 month association dues',
-        'Cash or check at the office', '—', 'Aug 12, 2026', 450),
-    const PaymentRecord(5, 'OR-2026-0005', 'Unit 12A', 'Maria Santos', '1 month association dues',
-        'Cash or check at the office', '—', 'Aug 11, 2026', 450),
-    const PaymentRecord(4, 'OR-2026-0004', 'Unit 6B', 'Jessele Fugaban', '1 month association dues',
-        'GCash', 'GC-2026-07-0145', 'Jul 13, 2026', 450),
-    const PaymentRecord(3, 'OR-2026-0003', 'Unit 12A', 'Maria Santos', '1 month association dues',
-        'Bank transfer', 'BT-2026-07-0112', 'Jul 12, 2026', 450),
-    const PaymentRecord(2, 'OR-2026-0002', 'Unit 6B', 'Jessele Fugaban', '1 month association dues',
-        'Maya', 'MY-2026-06-0145', 'Jun 14, 2026', 450),
-    const PaymentRecord(1, 'OR-2026-0001', 'Unit 12A', 'Maria Santos', '1 month association dues',
-        'GCash', 'GC-2026-06-0112', 'Jun 13, 2026', 450),
-  ];
+  final List<PaymentRecord> payments = [];
   final List<PaymentProof> proofs = [];
 
   List<PaymentRecord> get myPayments =>
@@ -389,29 +524,19 @@ class AppState extends ChangeNotifier {
   List<String> collectionTrendLabels([int n = 6]) =>
       [for (final m in trendMonths(n)) _months[m.month - 1].substring(0, 3)];
 
-  int _lastCloudId = 0;
-
-  /// An id that is unique across devices (milliseconds), so the app and the website never clash.
-  int cloudId() {
-    var t = DateTime.now().millisecondsSinceEpoch;
-    if (t <= _lastCloudId) t = _lastCloudId + 1;
-    _lastCloudId = t;
-    return t;
-  }
-
-  /// The next receipt number, counted from every receipt the app and the website know about.
-  /// OR-2026-0001 to 0006 are the sample receipts, so numbering continues after those.
+  /// The next receipt number of this year, counted from every receipt on record.
   String nextReceiptNo() {
-    final re = RegExp(r'^OR-2026-(\d+)$');
-    var max = 6;
+    final year = DateTime.now().year;
+    final re = RegExp(r'^OR-(\d{4})-(\d+)$');
+    var max = 0;
     for (final s in [...payments.map((p) => p.receiptNo), ...proofs.map((p) => p.receiptNo)]) {
       final m = re.firstMatch(s);
-      if (m != null) {
-        final n = int.parse(m[1]!);
+      if (m != null && int.parse(m[1]!) == year) {
+        final n = int.parse(m[2]!);
         if (n > max) max = n;
       }
     }
-    return 'OR-2026-${(max + 1).toString().padLeft(4, '0')}';
+    return 'OR-$year-${(max + 1).toString().padLeft(4, '0')}';
   }
 
   /// Records a payment and its receipt. A payment the office records itself is also added to
@@ -436,22 +561,19 @@ class AppState extends ChangeNotifier {
     if (proof == null) {
       proofs.insert(
         0,
-        PaymentProof(cloudId(), unit, payer, method, rec.reference, date, amount,
+        PaymentProof(nextId(), unit, payer, method, rec.reference, date, amount,
             status: 'Confirmed', forText: forText, receiptNo: no, confirmedOn: date, direct: true),
       );
     }
     return rec;
   }
 
-  /// The oldest unpaid due of a unit (monthly dues first, then one-off charges).
+  /// The oldest unpaid charge of a unit.
   Due? _firstOpenDue(String unit) {
     final open = dues.where((d) => d.unit == unit && !d.paid).toList()
-      ..sort((a, b) => a.isCharge == b.isCharge ? 0 : (a.isCharge ? 1 : -1));
+      ..sort((a, b) => a.id.compareTo(b.id));
     return open.isEmpty ? null : open.first;
   }
-
-  static String _duesText(int months) =>
-      '$months month${months == 1 ? '' : 's'} association dues';
 
   /// Resident: "I have paid" with the reference number. Returns an error or null.
   String? submitProof(String method, String reference, String amountRaw) {
@@ -463,8 +585,8 @@ class AppState extends ChangeNotifier {
     final due = _firstOpenDue(myUnit);
     proofs.insert(
         0,
-        PaymentProof(cloudId(), myUnit, myHousehold, method, reference.trim(), shortDate(DateTime.now()), a,
-            forText: due == null ? 'Association dues' : (due.isCharge ? due.note : _duesText(due.months))));
+        PaymentProof(nextId(), myUnit, myHousehold, method, reference.trim(), shortDate(DateTime.now()), a,
+            forText: due == null ? 'Association dues' : due.note));
     logActivity('Payment reference sent, $myUnit', 'Finance');
     _n();
     return null;
@@ -517,6 +639,15 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Admin: sets the approved yearly budget of each category (a blank or 0 removes the line).
+  void setBudget(Map<String, int> values) {
+    annualBudget.clear();
+    values.forEach((k, v) {
+      if (v > 0) annualBudget[k] = v;
+    });
+    _n();
+  }
+
   num spentIn(int year, int month) => expenses
       .where((e) => e.date.year == year && e.date.month == month)
       .fold<num>(0, (s, e) => s + e.amount);
@@ -528,33 +659,6 @@ class AppState extends ChangeNotifier {
   }
 
   String monthLabel(DateTime d) => '${_months[d.month - 1]} ${d.year}';
-
-  /// Resident: SIMULATED online checkout (stands in for a payment gateway).
-  /// No real money moves: it settles the resident's open dues, issues a receipt
-  /// and marks the method as "(simulated)". Returns null when nothing is owed.
-  PaymentRecord? payOnlineSimulated(String method) {
-    final total = myBalance;
-    if (total <= 0) return null;
-    final open = dues.where((d) => d.unit == myUnit && !d.paid).toList();
-    for (final d in open) {
-      d.paid = true;
-    }
-    final code = method.toLowerCase().contains('gcash')
-        ? 'GC'
-        : method.toLowerCase().contains('maya')
-            ? 'MY'
-            : method.toLowerCase().contains('bank')
-                ? 'BK'
-                : 'CD';
-    final ref = 'SIM-$code-${(DateTime.now().millisecondsSinceEpoch % 1000000).toString().padLeft(6, '0')}';
-    final forText = open.isEmpty
-        ? 'Association dues'
-        : open.map((d) => d.isCharge ? d.note : _duesText(d.months)).join(', ');
-    final rec = _addPayment(myUnit, myHousehold, forText, '$method (simulated)', ref, total);
-    logActivity('Online payment received (simulated), $myUnit', 'Finance');
-    _n();
-    return rec;
-  }
 
   /// Admin: the proof checks out - record the payment and issue a receipt.
   PaymentRecord confirmProof(PaymentProof p) {
@@ -571,7 +675,7 @@ class AppState extends ChangeNotifier {
     final String forText;
     if (due != null) {
       due.paid = true;
-      forText = due.isCharge ? due.note : _duesText(due.months);
+      forText = due.note;
     } else {
       forText = p.forText.isNotEmpty ? p.forText : 'Association dues';
     }
@@ -589,103 +693,17 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
-  // ---- live updates from the website / other devices (see lib/services/cloud_sync.dart) ----
-
-  static int _rank(String status) => status == 'Pending' ? 0 : 1;
-
-  /// Takes the payment proofs the shared database holds and updates this app to match.
-  /// A proof that is already confirmed or rejected here is never turned back into "Pending".
-  void applyCloudProofs(List<PaymentProof> remote) {
-    var changed = false;
-    for (final r in remote) {
-      final i = proofs.indexWhere((p) => p.id == r.id);
-      if (i < 0) {
-        proofs.add(r);
-        changed = true;
-      } else {
-        final p = proofs[i];
-        if (_rank(r.status) >= _rank(p.status) &&
-            (p.status != r.status ||
-                p.receiptNo != r.receiptNo ||
-                p.confirmedOn != r.confirmedOn ||
-                (r.forText.isNotEmpty && p.forText != r.forText))) {
-          p.status = r.status;
-          p.receiptNo = r.receiptNo;
-          p.confirmedOn = r.confirmedOn;
-          if (r.forText.isNotEmpty) p.forText = r.forText;
-          changed = true;
-        }
-      }
-      final cur = proofs.firstWhere((p) => p.id == r.id);
-      if (cur.status == 'Confirmed' &&
-          cur.receiptNo.isNotEmpty &&
-          !payments.any((x) => x.receiptNo == cur.receiptNo)) {
-        // Confirmed somewhere else: keep a receipt here too and mark the matching due as paid.
-        final due = _firstOpenDue(cur.unit);
-        if (due != null) due.paid = true;
-        final forText = cur.forText.isNotEmpty
-            ? cur.forText
-            : (due == null ? 'Association dues' : (due.isCharge ? due.note : _duesText(due.months)));
-        payments.insert(
-          0,
-          PaymentRecord(
-            nextId(),
-            cur.receiptNo,
-            cur.unit,
-            cur.payer,
-            forText,
-            cur.method,
-            cur.reference.isEmpty ? '—' : cur.reference,
-            cur.confirmedOn.isNotEmpty ? cur.confirmedOn : cur.date,
-            cur.amount,
-          ),
-        );
-        changed = true;
-      }
-    }
-    if (changed) {
-      proofs.sort((a, b) => b.id.compareTo(a.id));
-      _n();
-    }
-  }
-
-  /// Takes the motor parking data (slots, waiting requests, monthly rate) from the shared database.
-  void applyCloudParking(Map<String, String> slotUnits, List<ParkingReq> requests, num? rate) {
-    for (final s in slots) {
-      final u = slotUnits[s.id];
-      if (u != null) s.unit = u;
-    }
-    if (rate != null) motorRate = rate;
-    final inCloud = requests.map((r) => r.unit).toSet();
-    final next = [...requests]..sort((a, b) => a.at.compareTo(b.at));
-    // A request that is no longer waiting was either assigned a slot or declined.
-    for (final r in parking) {
-      if (!inCloud.contains(r.unit) && slotOf(r.unit) != null) {
-        r.confirmed = true;
-        next.add(r);
-      }
-    }
-    parking
-      ..clear()
-      ..addAll(next);
-    _n();
-  }
-
   void updatePayMethod(PayMethod m, String details, bool enabled) {
     if (details.trim().isNotEmpty) m.details = details.trim();
     m.enabled = enabled;
     _n();
   }
 
-  final List<Grievance> grievances = [
-    Grievance(1, 'Street light out on the Phase 2 road', '', 'Unit 8A', 0),
-    Grievance(2, 'Construction noise after 8 PM', '', 'Unit 14B', 1),
-    Grievance(3, 'Clogged drainage near the parking area', '', 'Unit 3D', 2),
-    Grievance(4, 'Slow drainage in the hallway sink',
-        'Reported last week, plumber scheduled.', 'Unit 12A', 1),
-  ];
+  // ---------------------------------------------------------------- community
 
-  final List<DocItem> docs = seedDocs();
+  final List<Grievance> grievances = [];
+
+  final List<DocItem> docs = liveDocs();
 
   /// Documents the signed-in role is allowed to see.
   List<DocItem> get visibleDocs {
@@ -701,42 +719,8 @@ class AppState extends ChangeNotifier {
   List<DocItem> get financeDocs =>
       visibleDocs.where((d) => d.cat == 'Finance').toList();
 
-  final List<Announcement> announcements = [
-    Announcement(1, 'Water interruption this Saturday',
-        'Main water supply will be shut off from 9 AM to 3 PM for pipe maintenance.',
-        'Yesterday', 'Published', 'Maintenance', true),
-    Announcement(2, 'Annual General Assembly',
-        "This year's assembly is set for October 18, 6:00 PM at the Function Hall.",
-        '3 days ago', 'Published', 'General', false),
-    Announcement(3, 'Reminder: October dues due on the 5th',
-        'Please settle dues on or before due date to avoid penalties.',
-        'Sep 20, 2026', 'Published', 'General', false),
-    Announcement(4, 'Water interruption on Sept 30',
-        'Scheduled maintenance, 10 PM–4 AM.', 'Sep 24, 2026', 'Published',
-        'Maintenance', true),
-    Announcement(5, 'Elevator B undergoing inspection',
-        'Elevator B out of service Oct 1, 8 AM–12 PM.', 'Sep 18, 2026',
-        'Draft', 'Maintenance', false),
-  ];
-
-  /// Mobile numbers of the resident accounts (used to text announcements).
-  List<String> get residentPhones => [
-        for (final a in trusted)
-          if (a.role == 'Resident' && validMobile(normalizePhone(a.phone))) normalizePhone(a.phone),
-      ];
-
-  final List<EventItem> events = [
-    EventItem(1, 'Community Clean-Up Drive', 'Oct 4, 2026 · 7:00 AM', 'Ground floor lobby',
-        about: 'Gloves and bags are provided. Breakfast is on the association.', going: 19),
-    EventItem(2, 'Zumba at the Function Hall', 'Every Sat · 6:00 AM', 'Function Hall',
-        about: 'A free weekly workout for residents of all ages. Bring a towel and water.', going: 14),
-    EventItem(3, 'Annual General Assembly', 'Oct 18, 2026 · 6:00 PM', 'Function Hall',
-        about: 'Yearly report, budget and board updates. Every unit is encouraged to send a representative.', going: 41),
-    EventItem(4, "Halloween Kids' Party", 'Oct 31, 2026 · 4:00 PM', 'Function Hall',
-        about: 'Kids in costume walk the building with a parent. Volunteers are welcome to hand out treats.', going: 27),
-    EventItem(5, 'HOA General Assembly', 'Nov 8, 2026 · 6:00 PM', 'Function Hall',
-        about: 'Board election and the budget for next year.', going: 33),
-  ];
+  final List<Announcement> announcements = [];
+  final List<EventItem> events = [];
 
   /// What happened in the app, newest first (shown as "Recent activity").
   final List<ActivityEntry> activityLog = [];
@@ -780,7 +764,7 @@ class AppState extends ChangeNotifier {
     }
     for (final r in myDueRows) {
       if (r.status == 'Overdue') {
-        out.add(['Dues for ${r.month} are overdue.', 'bad']);
+        out.add(['${r.month} is overdue.', 'bad']);
       } else if (r.status == 'Open') {
         out.add(['Open charge: ${r.month}.', 'info']);
       }
@@ -813,158 +797,9 @@ class AppState extends ChangeNotifier {
     return out;
   }
 
-  /// Accounts live on this device only, so the only session is the current one.
-  List<SessionInfo> sessions = [];
-
-  static String _deviceLabel() {
-    if (kIsWeb) return 'Web browser · ResidentHub';
-    return switch (defaultTargetPlatform) {
-      TargetPlatform.android => 'Android phone · ResidentHub app',
-      TargetPlatform.iOS => 'iPhone · ResidentHub app',
-      _ => 'Computer · ResidentHub',
-    };
-  }
-
-  static String _clock(DateTime t) {
-    final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
-    return '$h:${t.minute.toString().padLeft(2, '0')} ${t.hour >= 12 ? 'PM' : 'AM'}';
-  }
-
-  // ---------------------------------------------------------------- auth
-
-  /// Returns an error message, or null when sign-in succeeded.
-  /// Administrator (owner) password. Change it here before handing the app over.
-  String adminPassword = 'admin123';
-
-  int _failedLogins = 0;
-  DateTime? _lockedUntil;
-
-  String _loginFailed() {
-    _failedLogins++;
-    if (_failedLogins >= 5) {
-      _failedLogins = 0;
-      _lockedUntil = DateTime.now().add(const Duration(minutes: 1));
-      return 'Too many failed attempts. Please wait a minute and try again.';
-    }
-    return "Incorrect email/username or password. If you don't have an account yet, ask the administrator to set one up.";
-  }
-
-  String? login(String emailRaw, String pass) {
-    final e = emailRaw.trim().toLowerCase();
-    if (e.isEmpty) return 'Enter your email or username.';
-    if (pass.isEmpty) return 'Enter your password.';
-    final lock = _lockedUntil;
-    if (lock != null && DateTime.now().isBefore(lock)) {
-      return 'Too many failed attempts. Please wait a minute and try again.';
-    }
-    final acct = trusted.where((t) => t.email.toLowerCase() == e).toList();
-    if (acct.isNotEmpty && acct.first.suspended) {
-      return 'This account has been suspended. Contact the owner.';
-    }
-    // Owner / administrator
-    if (adminLogins.contains(e)) {
-      if (pass != adminPassword) return _loginFailed();
-      return _enter(Role.admin, null);
-    }
-    // Residents
-    final u = residents.where((r) => r.email.toLowerCase() == e).toList();
-    if (u.isNotEmpty && pass == u.first.password) return _enter(Role.resident, u.first);
-    return _loginFailed();
-  }
-
-  // ---------------------------------------------------------- forgot password
-  // Residents reset their password with a 6-digit code sent to the mobile number
-  // on file. No SMS gateway is connected in this build, so with [showTestCode] on,
-  // the code is shown on screen instead. Turn it off and plug a gateway into
-  // [startPasswordReset] when you go live.
-  static const bool showTestCode = true;
-
-  String? _otpPhone, _otpCode;
-  DateTime? _otpExpires;
-  int _otpTries = 0;
-
-  static String normalizePhone(String raw) {
-    var d = raw.replaceAll(RegExp(r'\D'), '');
-    if (d.startsWith('63') && d.length == 12) d = '0${d.substring(2)}';
-    return d;
-  }
-
-  static bool validMobile(String normalized) => RegExp(r'^09\d{9}$').hasMatch(normalized);
-
-  /// Step 1: the resident enters their phone number. Always looks the same from
-  /// the outside, whether or not the number belongs to an account.
-  String? startPasswordReset(String phoneRaw) {
-    final n = normalizePhone(phoneRaw);
-    if (!validMobile(n)) return 'Enter a valid mobile number, e.g. 0917 555 0112.';
-    _otpPhone = n;
-    _otpTries = 0;
-    if (residents.any((r) => normalizePhone(r.phone) == n)) {
-      _otpCode = (100000 + math.Random().nextInt(900000)).toString();
-      _otpExpires = DateTime.now().add(const Duration(minutes: 5));
-    } else {
-      _otpCode = null;
-      _otpExpires = null;
-    }
-    return null;
-  }
-
-  /// The code that would be texted (null when the number has no account).
-  String? get pendingTestCode => _otpCode;
-
-  /// Step 2: code + new password.
-  String? finishPasswordReset(String code, String nw, String conf) {
-    final c = _otpCode, p = _otpPhone, exp = _otpExpires;
-    if (c == null || p == null || exp == null) return 'That code is not valid. Request a new one.';
-    if (DateTime.now().isAfter(exp)) {
-      _clearOtp();
-      return 'That code has expired. Request a new one.';
-    }
-    if (++_otpTries > 5) {
-      _clearOtp();
-      return 'Too many wrong codes. Request a new one.';
-    }
-    if (code.trim() != c) return 'That code is not correct.';
-    if (nw.length < 6) return 'New password must be at least 6 characters.';
-    if (nw != conf) return "New password and confirmation don't match.";
-    for (final r in residents.where((r) => normalizePhone(r.phone) == p)) {
-      r.password = nw;
-    }
-    _clearOtp();
-    _failedLogins = 0;
-    _lockedUntil = null;
-    return null;
-  }
-
-  void _clearOtp() {
-    _otpPhone = null;
-    _otpCode = null;
-    _otpExpires = null;
-    _otpTries = 0;
-  }
-
-  String? _enter(Role r, ResidentUser? user) {
-    _failedLogins = 0;
-    _lockedUntil = null;
-    role = r;
-    me = user;
-    sessions = [SessionInfo(1, _deviceLabel(), 'Signed in at ${_clock(DateTime.now())}', 'Active now', true)];
-    resTab = 0;
-    adminTab = 0;
-    _n();
-    return null;
-  }
-
-  void logout() {
-    role = null;
-    me = null;
-    resTab = 0;
-    adminTab = 0;
-    _n();
-  }
-
   // ---------------------------------------------------------------- resident
 
-  String get myUnit => me?.unitLabel ?? 'Unit 12A';
+  String get myUnit => me?.unitLabel ?? '';
   Unit? get myUnitRec {
     final l = units.where((u) => u.unit == myUnit).toList();
     return l.isEmpty ? null : l.first;
@@ -977,21 +812,22 @@ class AppState extends ChangeNotifier {
       grievances.where((g) => g.by == myUnit).toList();
   bool get parkingRequested => parking.any((p) => p.unit == myUnit);
 
+  /// Every charge billed to the signed-in resident's unit, open ones first.
   List<MonthDue> get myDueRows {
-    final overdue = dues.any((d) => d.unit == myUnit && !d.paid && !d.isCharge);
+    final mine = dues.where((d) => d.unit == myUnit).toList()
+      ..sort((a, b) {
+        if (a.paid != b.paid) return a.paid ? 1 : -1;
+        return b.id.compareTo(a.id);
+      });
     return [
-      for (final d in dues)
-        if (d.unit == myUnit && d.isCharge)
-          MonthDue(d.note, d.amt, 'upon receipt', d.paid ? 'Paid' : 'Open'),
-      MonthDue('September 2026', 450, 'Sep 15', overdue ? 'Overdue' : 'Paid'),
-      MonthDue('August 2026', 450, 'Aug 15', 'Paid'),
-      MonthDue('July 2026', 450, 'Jul 15', 'Paid'),
-      MonthDue('June 2026', 450, 'Jun 15', 'Paid'),
+      for (final d in mine)
+        MonthDue(d.note, d.amt, d.dueDate.isEmpty ? 'upon receipt' : d.dueDate,
+            d.paid ? 'Paid' : (d.overdue ? 'Overdue' : 'Open')),
     ];
   }
 
-  int get myBalance =>
-      myDueRows.where((d) => d.status != 'Paid').fold(0, (s, d) => s + d.amt);
+  num get myBalance =>
+      myDueRows.where((d) => d.status != 'Paid').fold<num>(0, (s, d) => s + d.amt);
 
   Booking? get upcomingBooking {
     final l = myBookings
@@ -1001,11 +837,12 @@ class AppState extends ChangeNotifier {
   }
 
   void submitBooking(int f, int slot) {
-    mySlots.add('$f-$slot');
+    final now = DateTime.now();
     bookings.insert(
         0,
         Booking(nextId(), myHousehold, myUnit, facilities[f][0],
-            '${slotTimes[slot]} today', 'Pending'));
+            '${shortDate(now)}, ${slotTimes[slot]}', 'Pending',
+            day: dayKey(now), slot: slot));
     logActivity('Booking request for the ${facilities[f][0]}, $myUnit', 'Facilities');
     _n();
   }
@@ -1019,6 +856,7 @@ class AppState extends ChangeNotifier {
 
   void requestParking() {
     if (!parkingRequested) parking.add(ParkingReq(myUnit, myHousehold));
+    logActivity('Motor parking requested, $myUnit', 'Parking');
     _n();
   }
 
@@ -1034,7 +872,6 @@ class AppState extends ChangeNotifier {
       return 'Add a short note first, e.g. tenant name, platform, business type or expected end date.';
     }
     _applyStatus(u, key, note.trim(), 'Resident');
-    newStatusUpdates++;
     _n();
     return null;
   }
@@ -1061,38 +898,8 @@ class AppState extends ChangeNotifier {
     u.statusNote = note;
     u.statusDate = date;
     u.status = key == 'vacant' ? 'Vacant' : 'Occupied';
-    statusUpdates.insert(0, StatusUpdate(u.unit, key, note, date, by));
+    statusUpdates.insert(0, StatusUpdate(nextId(), u.unit, key, note, date, by));
     logActivity('${u.unit} status set to ${usageLabel(key).toLowerCase()}', 'Units');
-  }
-
-  void saveProfile(String name, String email, String phone) {
-    final u = me;
-    if (u == null) return;
-    u.name = name.trim();
-    u.email = email.trim();
-    u.phone = phone.trim();
-    _n();
-  }
-
-  String? changePassword(String cur, String nw, String conf) {
-    final u = me;
-    if (u == null) return 'No signed-in account to update.';
-    if (cur != u.password) return "Current password doesn't match.";
-    if (nw.length < 6) return 'New password must be at least 6 characters.';
-    if (nw != conf) return "New password and confirmation don't match.";
-    u.password = nw;
-    _n();
-    return null;
-  }
-
-  void logoutSession(int id) {
-    sessions = sessions.where((s) => s.id != id).toList();
-    _n();
-  }
-
-  void logoutOthers() {
-    sessions = sessions.where((s) => s.current).toList();
-    _n();
   }
 
   // ---------------------------------------------------------------- admin
@@ -1103,6 +910,11 @@ class AppState extends ChangeNotifier {
   int get pendingParking => parking.where((p) => !p.confirmed).length;
 
   void toggleSlot(int f, int i) {
+    final today = dayKey(DateTime.now());
+    if (blockedDay != today) {
+      blocked.clear();
+      blockedDay = today;
+    }
     final k = '$f-$i';
     blocked[k] = !(blocked[k] ?? false);
     _n();
@@ -1115,17 +927,53 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
-  /// Admin: adds a one-off charge (e.g. a facility damage fee) to a unit.
+  /// Admin: adds a charge (e.g. a facility damage fee) to a unit.
   String? addCharge(String unitRaw, String amountRaw, String note) {
     String norm(String t) => t.toLowerCase().replaceAll('unit', '').replaceAll(RegExp(r'[^a-z0-9]'), '');
     final key = norm(unitRaw);
     final match = key.isEmpty ? <Unit>[] : units.where((u) => norm(u.unit) == key).toList();
-    if (match.isEmpty) return 'No unit with that name. Use a unit such as "Unit 12A".';
+    if (match.isEmpty) return 'No unit with that name. Add the unit first, or use a name such as "Unit 12A".';
     final a = double.tryParse(amountRaw.trim().replaceAll(',', ''));
     if (a == null || a <= 0) return 'Enter a valid amount.';
     if (note.trim().isEmpty) return 'Add a short description, e.g. Facility damage fee.';
-    dues.add(Due(nextId(), match.first.unit, match.first.name, 0, customAmount: a.round(), note: note.trim()));
+    dues.add(Due(nextId(), match.first.unit, match.first.name, a, note.trim()));
     logActivity('Charge added, ${match.first.unit}: ${note.trim()}', 'Finance');
+    _n();
+    return null;
+  }
+
+  /// Admin: sets what each unit pays every month.
+  String? setDuesRate(String raw) {
+    final n = double.tryParse(raw.trim().replaceAll(',', ''));
+    if (n == null || n <= 0) return 'Enter the monthly dues amount.';
+    duesRate = n;
+    _n();
+    return null;
+  }
+
+  int lastBilledCount = 0;
+
+  /// Admin: bills the monthly association dues to every unit that has not been billed for [period] yet.
+  String? billMonthlyDues(String period, String dueRaw) {
+    if (duesRate <= 0) return 'Set the monthly dues amount first.';
+    if (units.isEmpty) return 'Add the units first.';
+    final p = period.trim();
+    if (p.isEmpty) return 'Enter the month, e.g. October 2026.';
+    String due = '';
+    if (dueRaw.trim().isNotEmpty) {
+      final d = parseShortDate(dueRaw);
+      if (d == null) return 'Enter the due date like "Oct 15, 2026".';
+      due = shortDate(d);
+    }
+    final note = 'Association dues - $p';
+    var n = 0;
+    for (final u in units) {
+      if (dues.any((d) => d.unit == u.unit && d.note == note)) continue;
+      dues.add(Due(nextId(), u.unit, u.name, duesRate, note, dueDate: due));
+      n++;
+    }
+    lastBilledCount = n;
+    if (n > 0) logActivity('Dues billed for $p: $n unit${n == 1 ? '' : 's'}', 'Finance');
     _n();
     return null;
   }
@@ -1135,7 +983,7 @@ class AppState extends ChangeNotifier {
     final d = dues.firstWhere((d) => d.id == id);
     if (d.paid) return null;
     d.paid = true;
-    final rec = _addPayment(d.unit, d.name, d.isCharge ? d.note : _duesText(d.months), method, reference, d.amt);
+    final rec = _addPayment(d.unit, d.name, d.note, method, reference, d.amt);
     logActivity('Payment recorded, ${d.unit}', 'Finance');
     _n();
     return rec;
@@ -1185,6 +1033,19 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Admin: adds [raw] more motor parking slots (M-01, M-02, ...).
+  String? addSlots(String raw) {
+    final n = int.tryParse(raw.trim());
+    if (n == null || n < 1 || n > 200) return 'Enter how many slots to add (1 to 200).';
+    final names = slotNames(slots.length + n).skip(slots.length);
+    for (final id in names) {
+      slots.add(ParkingSlot(id));
+    }
+    logActivity('$n motor parking slot${n == 1 ? '' : 's'} added', 'Parking');
+    _n();
+    return null;
+  }
+
   void assignSlot(ParkingSlot s, String unit) {
     s.unit = unit;
     for (final r in parking.where((r) => r.unit == unit)) {
@@ -1201,7 +1062,7 @@ class AppState extends ChangeNotifier {
   }
 
   // ---- polls (admin publishes, residents vote once per unit) ----
-  final List<Poll> polls = seedPolls();
+  final List<Poll> polls = [];
   final Map<String, int> _votes = {}; // '<unit>|<pollId>' -> option index
 
   int? myVote(int pollId) => _votes['$myUnit|$pollId'];
@@ -1237,17 +1098,26 @@ class AppState extends ChangeNotifier {
 
   void deletePoll(Poll p) {
     polls.remove(p);
+    _votes.removeWhere((k, _) => k.endsWith('|${p.id}'));
     logActivity('Poll deleted: ${p.question}', 'Polls');
     _n();
   }
 
   // ---- events (residents say they are going) ----
-  final Set<int> rsvp = {};
-  int goingCount(EventItem e) => e.going + (rsvp.contains(e.id) ? 1 : 0);
+  final Set<String> _rsvps = {}; // '<unit>|<eventId>'
+
+  /// The events the signed-in resident's unit is going to.
+  Set<int> get rsvp => {
+        for (final k in _rsvps)
+          if (k.startsWith('$myUnit|')) int.tryParse(k.substring(myUnit.length + 1)) ?? -1,
+      };
+
+  int goingCount(EventItem e) => _rsvps.where((k) => k.endsWith('|${e.id}')).length;
 
   void toggleRsvp(EventItem e) {
-    if (!rsvp.remove(e.id)) rsvp.add(e.id);
-    logActivity('${rsvp.contains(e.id) ? 'Going to' : 'No longer going to'}: ${e.title}', 'Events');
+    final k = '$myUnit|${e.id}';
+    if (!_rsvps.remove(k)) _rsvps.add(k);
+    logActivity('${_rsvps.contains(k) ? 'Going to' : 'No longer going to'}: ${e.title}', 'Events');
     _n();
   }
 
@@ -1278,7 +1148,7 @@ class AppState extends ChangeNotifier {
   void addAnnouncement(String title, String body, String type, bool sms) {
     announcements.insert(
         0,
-        Announcement(nextId(), title, body.isEmpty ? '—' : body, 'Just now',
+        Announcement(nextId(), title, body.isEmpty ? '—' : body, shortDate(DateTime.now()),
             'Published', type, sms));
     logActivity('Announcement published: $title', 'Announcements');
     _n();
@@ -1306,12 +1176,21 @@ class AppState extends ChangeNotifier {
 
   void deleteEvent(int id) {
     events.removeWhere((e) => e.id == id);
+    _rsvps.removeWhere((k) => k.endsWith('|$id'));
     _n();
   }
 
-  void addDoc(DocItem d) {
-    docs.insert(0, d);
+  /// Largest file the shared database holds for one document.
+  static const maxDocBytes = 2 * 1024 * 1024;
+
+  /// Admin: adds a document everybody (or only residents / only the administrator) can open.
+  String? addDoc(DocItem d) {
+    if ((d.raw?.length ?? 0) > maxDocBytes) {
+      return 'That file is larger than 2 MB. Use a smaller file.';
+    }
+    docs.insert(0, d.id.isEmpty ? d.withId('${nextId()}') : d);
     _n();
+    return null;
   }
 
   void removeDoc(DocItem d) {
@@ -1319,46 +1198,27 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
-  String? addAccount(String name, String email, String phone, String role, String unit) {
-    name = name.trim();
-    email = email.trim();
-    if (name.isEmpty || email.isEmpty) return 'Full name and email are required.';
-    if (!RegExp(r'^\S+@\S+\.\S+$').hasMatch(email)) return 'Enter a valid email address.';
-    final clash = email.toLowerCase() == 'owner@cityresidences.ph' ||
-        trusted.any((t) => t.email.toLowerCase() == email.toLowerCase()) ||
-        residents.any((r) => r.email.toLowerCase() == email.toLowerCase());
-    if (clash) return 'An account with that email already exists.';
-    if (role == 'Resident' && unit.trim().isEmpty) {
-      return "Assign a unit to confirm this resident's account.";
-    }
-    final u = role == 'Resident' ? unit.trim() : '—';
-    trusted.add(Account(name, email, phone.trim().isEmpty ? '—' : phone.trim(), u, role, 'Just now'));
-    if (role == 'Resident') {
-      residents.add(ResidentUser(name, '$u · Owner', email,
-          phone.trim().isEmpty ? '—' : phone.trim(), 'resident123'));
-    }
+  // ---- directory and house rules (administrator) ----
+  void setDirectory(List<ContactInfo> contacts, List<List<String>> rules) {
+    directoryContacts
+      ..clear()
+      ..addAll(contacts);
+    houseRules
+      ..clear()
+      ..addAll(rules);
     _n();
-    return null;
   }
+}
 
-  /// Admin issues a temporary password; returns it so it can be handed over.
-  String resetPassword(Account a) {
-    const tmp = 'resident123';
-    for (final r in residents.where((r) => r.email.toLowerCase() == a.email.toLowerCase())) {
-      r.password = tmp;
-    }
-    _n();
-    return tmp;
+/// Orders "Unit 2A" before "Unit 12A".
+int naturalCompare(String a, String b) {
+  final re = RegExp(r'(\d+)|(\D+)');
+  final x = re.allMatches(a).map((m) => m[0]!).toList();
+  final y = re.allMatches(b).map((m) => m[0]!).toList();
+  for (var i = 0; i < x.length && i < y.length; i++) {
+    final nx = int.tryParse(x[i]), ny = int.tryParse(y[i]);
+    final c = (nx != null && ny != null) ? nx.compareTo(ny) : x[i].toLowerCase().compareTo(y[i].toLowerCase());
+    if (c != 0) return c;
   }
-
-  void toggleSuspend(Account a) {
-    a.suspended = !a.suspended;
-    _n();
-  }
-
-  void revoke(Account a) {
-    trusted.remove(a);
-    residents.removeWhere((r) => r.email.toLowerCase() == a.email.toLowerCase());
-    _n();
-  }
+  return x.length.compareTo(y.length);
 }

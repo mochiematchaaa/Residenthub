@@ -38,7 +38,7 @@ class _AdminDocsState extends State<AdminDocs> {
       onSubmit: (v) {
         final n = (v['name'] as String).trim();
         if (n.isEmpty) return 'Enter a title.';
-        app.addDoc(DocItem(
+        return app.addDoc(DocItem(
           n,
           v['cat'] as String,
           'Added ${shortDate(DateTime.now()).split(',').first}',
@@ -46,7 +46,6 @@ class _AdminDocsState extends State<AdminDocs> {
           raw: file.bytes,
           ext: file.ext,
         ));
-        return null;
       },
     );
   }

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/core.dart';
 import '../../widgets/widgets.dart';
 
-/// Administrator: the 24 motor parking slots and the residents asking for one.
+/// Administrator: the motor parking slots and the residents asking for one.
 class AdminParking extends StatelessWidget {
   const AdminParking({super.key});
 
@@ -83,8 +83,27 @@ class AdminParking extends StatelessWidget {
                   ],
                 ),
               ),
-            Text('Slots', style: hd(18)),
-            Text('Tap a slot to assign or release it.', style: TextStyle(color: muted(context), fontSize: 12.5)),
+            Row(
+              children: [
+                Expanded(child: Text('Slots', style: hd(18))),
+                TextButton.icon(
+                  onPressed: () => showFormSheet(
+                    context,
+                    title: 'Add parking slots',
+                    subtitle: app.slots.isEmpty ? 'How many motor parking slots does the building have?' : 'You have ${app.slots.length} slots. How many more should be added?',
+                    fields: const [FieldSpec('n', 'Number of slots', type: TextInputType.number, hint: 'e.g. 24')],
+                    submit: 'Add slots',
+                    onSubmit: (v) => app.addSlots(v['n'] as String),
+                  ),
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Add slots'),
+                ),
+              ],
+            ),
+            if (app.slots.isEmpty)
+              const EmptyBox('No slots yet. Tap "Add slots" to set up the parking area.', icon: Icons.local_parking_rounded)
+            else
+              Text('Tap a slot to assign or release it.', style: TextStyle(color: muted(context), fontSize: 12.5)),
             GridView.count(
               crossAxisCount: 4,
               shrinkWrap: true,

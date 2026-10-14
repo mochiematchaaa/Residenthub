@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
+import '../../services/session.dart';
 import '../../widgets/widgets.dart';
 import '../../services/cloud_sync.dart' show CloudStatusLine;
 import 'admin_screens.dart';
@@ -81,11 +82,12 @@ class AdminMore extends StatelessWidget {
         ]),
         NavGroup(label: 'Administration', children: [
           NavTile(icon: Icons.admin_panel_settings_outlined, title: 'Manage access', subtitle: '${app.trusted.length + 1} accounts', onTap: () => go(context, const AdminAccess())),
+          NavTile(icon: Icons.contacts_outlined, title: 'Directory and house rules', subtitle: '${directoryContacts.length} contacts · ${houseRules.length} rules', onTap: () => go(context, const AdminDirectory())),
           NavTile(icon: Icons.settings_outlined, title: 'Settings', subtitle: 'Profile, photo, password, appearance', onTap: () => go(context, const AdminSettings())),
         ]),
         OutlinedButton.icon(
           onPressed: () async {
-            if (await confirmDialog(context, 'Log out?', 'You will need to sign in again.', confirm: 'Log out')) app.logout();
+            if (await confirmDialog(context, 'Log out?', 'You will need to sign in again.', confirm: 'Log out')) session.signOut();
           },
           icon: const Icon(Icons.logout_rounded),
           label: const Text('Log out'),

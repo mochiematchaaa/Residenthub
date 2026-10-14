@@ -13,15 +13,9 @@ const expenseCategories = [
   'Other',
 ];
 
-/// Approved annual budget per category (same figures as the Annual Budget document).
-const annualBudget = <String, int>{
-  'Security services': 960000,
-  'Common-area utilities': 540000,
-  'Janitorial and maintenance': 420000,
-  'Repairs and improvements': 300000,
-  'Insurance': 120000,
-  'Administration and reserve fund': 180000,
-};
+/// Approved annual budget per category. Empty until the administrator enters it
+/// (Expenses > Annual budget); it is shared with the website through the database.
+final annualBudget = <String, int>{};
 
 /// Which facility or part of the building a purchase is for.
 const expenseAreas = [

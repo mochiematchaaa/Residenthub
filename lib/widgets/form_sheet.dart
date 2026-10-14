@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/core.dart';
@@ -38,7 +40,7 @@ Future<void> showFormSheet(
   List<ChoiceSpec> choices = const [],
   List<ToggleSpec> toggles = const [],
   required String submit,
-  required String? Function(Map<String, dynamic> v) onSubmit,
+  required FutureOr<String?> Function(Map<String, dynamic> v) onSubmit,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -57,7 +59,7 @@ class _FormSheet extends StatefulWidget {
   final List<FieldSpec> fields;
   final List<ChoiceSpec> choices;
   final List<ToggleSpec> toggles;
-  final String? Function(Map<String, dynamic>) onSubmit;
+  final FutureOr<String?> Function(Map<String, dynamic>) onSubmit;
   const _FormSheet({
     required this.title, this.subtitle, required this.fields, required this.choices,
     required this.toggles, required this.submit, required this.onSubmit,
@@ -71,6 +73,7 @@ class _FormSheetState extends State<_FormSheet> {
   final Map<String, TextEditingController> ctrls = {};
   final Map<String, dynamic> vals = {};
   String? error;
+  bool busy = false;
 
   @override
   void initState() {
@@ -94,14 +97,20 @@ class _FormSheetState extends State<_FormSheet> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
+    if (busy) return;
     final out = <String, dynamic>{...vals};
     ctrls.forEach((k, c) => out[k] = c.text);
-    final err = widget.onSubmit(out);
+    setState(() => busy = true);
+    final err = await widget.onSubmit(out);
+    if (!mounted) return;
     if (err == null) {
       Navigator.of(context).pop();
     } else {
-      setState(() => error = err);
+      setState(() {
+        busy = false;
+        error = err;
+      });
     }
   }
 
@@ -179,7 +188,7 @@ class _FormSheetState extends State<_FormSheet> {
             const SizedBox(height: 4),
             SizedBox(
               width: double.infinity,
-              child: FilledButton(onPressed: _submit, child: Text(widget.submit)),
+              child: FilledButton(onPressed: busy ? null : _submit, child: Text(busy ? 'Please wait…' : widget.submit)),
             ),
           ],
         ),

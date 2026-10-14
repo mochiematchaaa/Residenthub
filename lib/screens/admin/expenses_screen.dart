@@ -24,6 +24,31 @@ class _AdminExpensesState extends State<AdminExpenses> {
 
   void _shift(int by) => setState(() => _month = DateTime(_month.year, _month.month + by, 1));
 
+  void _budget(BuildContext context) {
+    showFormSheet(
+      context,
+      title: 'Annual budget',
+      subtitle: 'The approved yearly amount for each category, in pesos. Leave a line empty if it has no budget. The monthly report compares your spending with it.',
+      fields: [
+        for (final c in expenseCategories)
+          FieldSpec(c, c, type: TextInputType.number, initial: annualBudget[c] == null ? '' : '${annualBudget[c]}'),
+      ],
+      submit: 'Save budget',
+      onSubmit: (v) {
+        final out = <String, int>{};
+        for (final c in expenseCategories) {
+          final raw = (v[c] as String).trim().replaceAll(',', '');
+          if (raw.isEmpty) continue;
+          final n = int.tryParse(raw);
+          if (n == null || n < 0) return 'Enter whole pesos only for "$c".';
+          if (n > 0) out[c] = n;
+        }
+        app.setBudget(out);
+        return null;
+      },
+    );
+  }
+
   void _add(BuildContext context) {
     showFormSheet(
       context,
@@ -161,6 +186,21 @@ class _AdminExpensesState extends State<AdminExpenses> {
                     label: const Text('Excel'),
                   ),
                 ],
+              ),
+            ),
+
+            DashSection(
+              title: 'Annual budget',
+              hint: annualBudget.isEmpty
+                  ? 'Not set yet. Enter the approved budget so the report can compare spending against it.'
+                  : 'Total ${peso(annualBudget.values.fold<int>(0, (a, b) => a + b))} per year.',
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.tonalIcon(
+                  onPressed: () => _budget(context),
+                  icon: const Icon(Icons.tune_rounded),
+                  label: Text(annualBudget.isEmpty ? 'Set annual budget' : 'Edit annual budget'),
+                ),
               ),
             ),
 

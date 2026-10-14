@@ -5,6 +5,7 @@ export 'admin_actions.dart';
 export 'admin_shell.dart';
 export 'activity_screen.dart';
 export 'announcements_screen.dart';
+export 'directory_admin_screen.dart';
 export 'documents_screen.dart';
 export 'expenses_screen.dart';
 export 'finance_docs_screen.dart';

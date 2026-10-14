@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
 import '../../services/links.dart';
+import '../../services/session.dart';
 import '../../widgets/widgets.dart';
 import 'forgot_password_screen.dart';
 
@@ -15,7 +16,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _pass = TextEditingController();
-  bool _show = false;
+  bool _show = false, _busy = false;
   String? _error;
 
   @override
@@ -25,10 +26,16 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
+    if (_busy) return;
     FocusScope.of(context).unfocus();
-    final err = app.login(_email.text.trim(), _pass.text.trim());
-    if (err != null) setState(() => _error = err);
+    setState(() => _busy = true);
+    final err = await session.signIn(_email.text.trim(), _pass.text);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = err;
+    });
   }
 
   void _forgot() => go(context, const ForgotPasswordScreen());
@@ -128,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             textInputAction: TextInputAction.next,
                             onChanged: (_) => setState(() => _error = null),
                             decoration: const InputDecoration(
-                              labelText: 'Email or username',
+                              labelText: 'Email',
                               prefixIcon: Icon(Icons.alternate_email_rounded),
                             ),
                           ),
@@ -158,7 +165,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           SizedBox(
                             width: double.infinity,
                             height: 54,
-                            child: FilledButton(onPressed: _submit, child: const Text('Continue')),
+                            child: FilledButton(onPressed: _busy ? null : _submit, child: Text(_busy ? 'Signing in…' : 'Continue')),
                           ),
                           Align(
                             alignment: Alignment.centerRight,
@@ -180,7 +187,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'No public sign-up. Accounts are issued by the administrator, who links your email and phone to your confirmed unit.',
+                              'No public sign-up. Accounts are issued by the administrator, who links your email to your confirmed unit.',
                               style: TextStyle(color: inkSoft, fontSize: 12.5, height: 1.4),
                             ),
                           ),

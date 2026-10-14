@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
+import '../../services/session.dart';
 import '../../widgets/widgets.dart';
 import '../shared/profile_widgets.dart';
 
@@ -14,7 +15,6 @@ class AdminSettings extends StatefulWidget {
 
 class _AdminSettingsState extends State<AdminSettings> {
   late final name = TextEditingController(text: app.adminName);
-  late final email = TextEditingController(text: app.adminEmail);
   late final phone = TextEditingController(text: app.adminPhone);
   final cur = TextEditingController();
   final nw = TextEditingController();
@@ -22,7 +22,7 @@ class _AdminSettingsState extends State<AdminSettings> {
 
   @override
   void dispose() {
-    for (final c in [name, email, phone, cur, nw, conf]) {
+    for (final c in [name, phone, cur, nw, conf]) {
       c.dispose();
     }
     super.dispose();
@@ -51,9 +51,9 @@ class _AdminSettingsState extends State<AdminSettings> {
                 TextField(controller: name, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Full name')),
                 const SizedBox(height: 10),
                 TextField(
-                  controller: email,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(labelText: 'Email address', helperText: 'You can also sign in with this email.'),
+                  enabled: false,
+                  controller: TextEditingController(text: app.adminEmail),
+                  decoration: const InputDecoration(labelText: 'Email address', helperText: 'This is the email you sign in with.'),
                 ),
                 const SizedBox(height: 10),
                 TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Mobile number (optional)')),
@@ -67,9 +67,9 @@ class _AdminSettingsState extends State<AdminSettings> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: () {
-                      final err = app.saveAdminProfile(name.text, email.text, phone.text);
-                      msg(context, err ?? 'Profile updated.');
+                    onPressed: () async {
+                      final err = await session.saveProfile(name.text, phone.text);
+                      if (context.mounted) msg(context, err ?? 'Profile updated.');
                     },
                     child: const Text('Save changes'),
                   ),
@@ -87,21 +87,21 @@ class _AdminSettingsState extends State<AdminSettings> {
                 const SizedBox(height: 14),
                 TextField(controller: cur, obscureText: true, decoration: const InputDecoration(labelText: 'Current password')),
                 const SizedBox(height: 10),
-                TextField(controller: nw, obscureText: true, decoration: const InputDecoration(labelText: 'New password', hintText: 'At least 6 characters')),
+                TextField(controller: nw, obscureText: true, decoration: const InputDecoration(labelText: 'New password', hintText: 'At least 8 characters')),
                 const SizedBox(height: 10),
                 TextField(controller: conf, obscureText: true, decoration: const InputDecoration(labelText: 'Confirm new password')),
                 const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: () {
-                      final err = app.changeAdminPassword(cur.text, nw.text, conf.text);
+                    onPressed: () async {
+                      final err = await session.changePassword(cur.text, nw.text, conf.text);
                       if (err == null) {
                         cur.clear();
                         nw.clear();
                         conf.clear();
                       }
-                      msg(context, err ?? 'Password updated.');
+                      if (context.mounted) msg(context, err ?? 'Password updated.');
                     },
                     child: const Text('Update password'),
                   ),
@@ -120,8 +120,6 @@ class _AdminSettingsState extends State<AdminSettings> {
               onChanged: (_) => app.toggleDark(),
             ),
           ),
-          Text('Your changes are kept on this device only and are reset when the app restarts.',
-              style: TextStyle(color: muted(context), fontSize: 12)),
         ],
       ),
     );
