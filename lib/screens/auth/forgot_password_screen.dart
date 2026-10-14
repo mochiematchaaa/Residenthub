@@ -6,8 +6,8 @@ import '../../core/core.dart';
 import '../../services/session.dart';
 import '../../widgets/widgets.dart';
 
-/// Forgot password: a code is emailed and another is texted to the mobile number on the account.
-/// With both codes the person chooses a new password.
+/// Forgot password: one code is sent by text message or by email (the person chooses, among the
+/// ways that are set up). With the code the person chooses a new password.
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
 
@@ -17,19 +17,37 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _email = TextEditingController();
-  final _ec = TextEditingController();
-  final _sc = TextEditingController();
+  final _code = TextEditingController();
   final _pw = TextEditingController();
   final _pw2 = TextEditingController();
   bool _busy = false, _sent = false, _show = false;
   String? _error;
+  VerifyOptions? _opts;
+  String _chan = '';
   int _wait = 0;
   Timer? _timer;
 
   @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    var o = await session.resetOptions();
+    // if the server could not be asked, offer both and let the server answer
+    if (o.error != null) o = const VerifyOptions(emailReady: true, smsReady: true);
+    if (!mounted) return;
+    setState(() {
+      _opts = o;
+      _chan = o.first;
+    });
+  }
+
+  @override
   void dispose() {
     _timer?.cancel();
-    for (final c in [_email, _ec, _sc, _pw, _pw2]) {
+    for (final c in [_email, _code, _pw, _pw2]) {
       c.dispose();
     }
     super.dispose();
@@ -51,7 +69,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       _busy = true;
       _error = null;
     });
-    final err = await session.requestPasswordReset(_email.text);
+    final err = await session.requestPasswordReset(_email.text, _chan);
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -67,7 +85,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       _busy = true;
       _error = null;
     });
-    final err = await session.confirmPasswordReset(_email.text, _ec.text, _sc.text, _pw.text, _pw2.text);
+    final err = await session.confirmPasswordReset(_email.text, _chan, _code.text, _pw.text, _pw2.text);
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -85,7 +103,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Widget build(BuildContext context) {
     return SubPage(
       title: 'Forgot password',
-      subtitle: 'We send one code to your email and one to your mobile number, so nobody else can take over your account.',
+      subtitle: 'Choose how to get a code. It goes to the email or mobile number on file for your account, so nobody else can take it over.',
       children: [
         RCard(
           padding: const EdgeInsets.all(18),
@@ -101,32 +119,41 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               ),
               if (!_sent) ...[
                 const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: FilledButton(onPressed: _busy ? null : _request, child: Text(_busy ? 'Sending…' : 'Send the codes')),
-                ),
+                if (_opts == null)
+                  const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
+                else if (!_opts!.any)
+                  const Text('Verification codes are not available right now. Please contact the administration office.',
+                      style: TextStyle(color: danger, fontSize: 12.5, fontWeight: FontWeight.w600))
+                else ...[
+                  ChannelPicker(
+                    smsReady: _opts!.smsReady,
+                    emailReady: _opts!.emailReady,
+                    value: _chan,
+                    onChanged: (v) => setState(() => _chan = v),
+                  ),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: FilledButton(onPressed: _busy ? null : _request, child: Text(_busy ? 'Sending…' : 'Send the code')),
+                  ),
+                ],
               ] else ...[
                 const SizedBox(height: 10),
                 Text(
-                  'If that email belongs to an account, we sent a code to it and a text message to the mobile number on file. The codes expire in 10 minutes.',
+                  'If that email belongs to an account, we sent a code by ${_chan == 'sms' ? 'text message' : 'email'}. The code expires in 10 minutes.',
                   style: TextStyle(color: muted(context), fontSize: 12.5, height: 1.4),
                 ),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: _ec,
+                  controller: _code,
                   keyboardType: TextInputType.number,
                   maxLength: 6,
                   onChanged: (_) => setState(() => _error = null),
-                  decoration: const InputDecoration(labelText: 'Code from your email', prefixIcon: Icon(Icons.mail_outline_rounded), counterText: ''),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _sc,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  onChanged: (_) => setState(() => _error = null),
-                  decoration: const InputDecoration(labelText: 'Code from the text message', prefixIcon: Icon(Icons.sms_outlined), counterText: ''),
+                  decoration: InputDecoration(
+                    labelText: '6-digit code',
+                    prefixIcon: Icon(_chan == 'sms' ? Icons.sms_outlined : Icons.mail_outline_rounded),
+                    counterText: '',
+                  ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
@@ -166,8 +193,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
                 TextButton(
                   onPressed: (_busy || _wait > 0) ? null : _request,
-                  child: Text(_wait > 0 ? 'Send new codes in $_wait s' : 'Send new codes'),
+                  child: Text(_wait > 0 ? 'Send a new code in $_wait s' : 'Send a new code'),
                 ),
+                if (_opts != null && _opts!.smsReady && _opts!.emailReady)
+                  TextButton(
+                    onPressed: _busy ? null : () => setState(() { _sent = false; _error = null; }),
+                    child: const Text('Send it another way'),
+                  ),
               ],
             ],
           ),
@@ -175,7 +207,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         Padding(
           padding: const EdgeInsets.only(top: 6),
           child: Text(
-            'No code arrived, or the mobile number changed? Contact the administration office. They can give you a temporary password.',
+            'No code arrived? Contact the administration office. They can give you a temporary password.',
             style: TextStyle(color: muted(context), fontSize: 12.5, height: 1.4),
           ),
         ),

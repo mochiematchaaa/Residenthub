@@ -23,7 +23,7 @@ class BuildingBackdrop extends StatelessWidget {
       children: [
         ColoredBox(color: base),
         Image.asset(
-          'assets/images/building.png',
+          'assets/images/building.jpg',
           fit: BoxFit.cover,
           alignment: Alignment.topCenter,
           gaplessPlayback: true,

@@ -35,7 +35,7 @@ class _AdminAccessState extends State<AdminAccess> {
               fields: const [
                 FieldSpec('name', 'Full name', hint: 'e.g. Ana Reyes'),
                 FieldSpec('email', 'Email address', type: TextInputType.emailAddress, hint: 'e.g. ana.reyes@gmail.com'),
-                FieldSpec('phone', 'Mobile number (a code is texted to it)', type: TextInputType.phone, hint: 'e.g. 0917 555 0000'),
+                FieldSpec('phone', 'Mobile number (optional)', type: TextInputType.phone, hint: 'e.g. 0917 555 0000'),
                 FieldSpec('unit', 'Unit (must already exist under Units)', hint: 'e.g. Unit 12A'),
               ],
               submit: 'Create account',

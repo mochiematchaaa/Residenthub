@@ -51,7 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
         children: [
           // --- building photo as the full-screen background
           Image.asset(
-            'assets/images/building.png',
+            'assets/images/building.jpg',
             fit: BoxFit.cover,
             alignment: Alignment.center,
             errorBuilder: (_, __, ___) => Container(color: ink),
