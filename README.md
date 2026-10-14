@@ -1,9 +1,8 @@
 # ResidentHub (residenthub_dashboard)
 
-Flutter mobile app for **City Residences Condominium Corporation** - a redesigned,
-touch-first version of the ResidentHub web demo. All content (units, bookings, dues,
-grievances, announcements, unit status, motor parking, access management...)
-comes from the web demo; the interface is new.
+Flutter app (web and Android) for **City Residences Condominium Corporation**. It is a real
+system: it starts empty, the administrator enters all details and creates every resident account,
+and everything is stored in a Supabase database shared by all devices.
 
 ## Open in Android Studio
 1. Create a project: *File > New > New Flutter Project*, name it `residenthub_dashboard`
@@ -16,28 +15,31 @@ Requires Flutter 3.22+ (Dart 3.3+). Two packages are used for documents: `file_p
 (import files, save exports) and `archive` (reads/writes .docx and .xlsx). Run `flutter pub get`
 after copying `pubspec.yaml`.
 
-## Sign-in accounts
-Every account needs its password (5 wrong tries lock sign-in for a minute).
-- Administrator: username `admin` (also `owner`, `joseph`) / password `admin123`
-  (change `adminPassword` in `lib/core/app_state.dart` before handing the app over)
-- Residents: `maria.santos@cityresidences.ph` or `jessele.fugaban@cityresidences.ph` / `resident123`
-Forgot password (residents): enter the registered mobile number, get a 6-digit code, set a new
-password. No SMS gateway is connected yet, so the code is shown on screen
-(`AppState.showTestCode` in `lib/core/app_state.dart`; set it to `false` and send the SMS from
-`startPasswordReset` when you go live).
-
-New accounts are created by the administrator (Manage access); they start with the temporary
-password `resident123` and can change it in Settings. The administrator can also reset any
-password from Manage access.
-
-Accounts live on the phone only (in memory); real multi-device sign-in needs a backend.
+## Sign-in accounts and data
+- There are no sample accounts and no sample data. Sign-in uses Supabase Authentication (email + password;
+  5 wrong tries lock sign-in for a minute).
+- The first administrator is created by the owner in the Supabase dashboard (Authentication > Users, Auto Confirm),
+  then set to admin with SQL: `update public.profiles set role='admin', name='...' where email='...';`
+- The administrator creates resident accounts in Manage access. The app shows a temporary password once; the
+  resident must choose a new password at first sign-in. The administrator can reset a password, suspend or delete
+  a resident account. This runs through the Edge Function `supabase/functions/manage-users` (it uses the
+  service role key on the server only; never put that key or the database password in the app).
+- Forgot password: residents ask the administrator for a reset.
+- Data is stored in the table `public.records` (kind, id, unit, value) and `public.profiles`. Row-level security
+  keeps residents to their own unit's rows (and the public ones: announcements, events, polls, slots...).
+  Changes sync in real time between devices. The public URL and anon key are in `lib/services/supabase_config.dart`.
+- Turn off "Allow new users to sign up" in Supabase (Authentication > Sign In / Providers) so only the
+  administrator can create accounts.
 
 ## Project structure (one file per screen)
 ```
 lib/
   main.dart                      app entry, theme + login/role switching
   core/
-    app_state.dart               models, sample data, shared AppState
+    app_state.dart               models and shared AppState
+    cloud_codec.dart             record <-> model conversion for the database
+    ../services/session.dart     sign-in, accounts (Supabase Auth + manage-users)
+    ../services/cloud_sync.dart  generic sync of records, realtime refresh
     theme.dart                   pastel palette + Material 3 theme (light/dark)
     doc_model.dart               document model (blocks: headings, text, bullets, tables)
     doc_seed.dart                the documents that ship with the app (edit the wording here)
@@ -67,18 +69,17 @@ Each bottom-navigation tab and each "More" page lives in its own file.
 
 ## Notes
 - Visitor management and vendor management have been removed from this build (both resident and admin sides).
-- Everything runs on in-memory sample data and resets when the app restarts.
+- Everything is saved in the Supabase database; nothing is sample data.
 - Resident and admin share one state: a booking, grievance, unit status update or
   parking request made as a resident shows up for the admin, and decisions flow back.
-- The earnings line chart, "Recent activity", "Upcoming facility bookings" and the resident notifications are built from what is recorded in the app (payments, bookings, grievances, announcements). They start empty or with the seed records and fill in as people use the app.
+- The earnings line chart, "Recent activity", "Upcoming facility bookings" and the resident notifications are built from what is recorded in the app (payments, bookings, grievances, announcements). They start empty and fill in as people use the app.
 - Documents: every document opens in the app and can be downloaded as Word (.docx) or Excel (.xlsx).
   Categories: Policy, Finance, Form, Notice, Minutes, Other. Finance includes the dues schedule, the
   annual budget, a live collection report (admin) and a live statement of account (resident).
   The administrator can import .docx, .xlsx, .csv, .txt/.md or .pdf files (Documents > Import file);
   Word/Excel/CSV/text files are readable in the app, PDFs can be downloaded back. In Finance the
   administrator can export the dues report and import an Excel/CSV list of paid units to record payments.
-  The wording of the built-in documents is sample text: edit it in `lib/core/doc_seed.dart`.
-- Imported documents live in memory like the rest of the data (they disappear when the app restarts).
+  The wording of the built-in documents is a template: edit it in `lib/core/doc_seed.dart`. Imported documents are stored in the database (max 2 MB each).
 - Finance documents are kept apart from the community documents: More > Finance documents (admin and
   resident). They hold the dues schedule, budget, collection report, payment history, statement of account
   and every receipt. Community documents (rules, forms, notices, minutes) no longer list finance files.
@@ -91,9 +92,9 @@ Each bottom-navigation tab and each "More" page lives in its own file.
   reference number of their payment, and get a receipt once the administrator confirms it. Every receipt
   opens in the app and downloads as Word or Excel, and the payment history can be exported too. The
   administrator edits the account details (Finance > Payment options), checks proofs and records payments
-  (Finance > Record payment). The account details are placeholders: add your real bank/e-wallet details.
+  (Finance > Record payment). Only "Pay at the office" is on by default: the administrator adds the real bank/e-wallet details.
   There is no online payment gateway: money is paid outside the app and recorded here as proof.
-- Online payment is a SIMULATION: Dues & payment > "Pay online (simulation)" settles the resident's balance and issues a receipt marked "(simulated)" with a SIM-... reference. No real money moves. Connecting a real gateway (e.g. PayMongo) needs a merchant account and a backend server.
+- There is no online payment in this build; the resident sends proof of payment and the administrator confirms it.
 - Expenses (administrator only): Finance > Expenses, or More > Expenses. Every purchase of the corporation is encoded:
   what was bought, quantity, price of one, store or supplier, official receipt no., the facility or area it is for,
   category and date. The screen has a month picker, the month's total, a "where the money went" breakdown and the list
@@ -101,7 +102,7 @@ Each bottom-navigation tab and each "More" page lives in its own file.
   spending by facility, change from last month) can be viewed and exported to Word or Excel for any month, and the
   current month also appears under Finance documents (admin only), next to the year-to-date Expense Report.
   The list starts empty.
-- Profile: the administrator edits name, email, mobile number, photo and password under More > Settings (tap the avatar on the home screen or the profile card). Residents edit the same under More > Settings, including a profile photo. The administrator can also sign in with the email saved in the profile. Photos and changes are kept in memory only.
+- Profile: the administrator edits name, email, mobile number, photo and password under More > Settings (tap the avatar on the home screen or the profile card). Residents edit the same under More > Settings, including a profile photo. The administrator can also sign in with the email saved in the profile. 
 - The "Needs attention" cards on the administrator home are picture cards (ImageTile). The pictures are in assets/images (need_dues, need_bookings, need_units, need_grievances) and can be replaced with your own photos of the same name.
 
 ## Background photo
