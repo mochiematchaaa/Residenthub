@@ -394,6 +394,11 @@ List<CRow> exportRows(AppState a) {
       for (final m in a.payMethods) {'name': m.name, 'details': m.details, 'enabled': m.enabled}
     ]
   });
+  add('setting', 'amenities', '', {
+    'list': [
+      for (final m in a.amenities) {'id': m.id, 'name': m.name, 'open': m.open, 'close': m.close, 'mins': m.mins, 'note': m.note}
+    ]
+  });
   add('setting', 'blocked', '', {
     'day': a.blockedDay,
     'keys': [for (final e in a.blocked.entries) if (e.value) e.key]
@@ -534,6 +539,18 @@ void importRows(AppState a, Iterable<CRow> all) {
       }
     }
   }
+  final am = st['amenities']?['list'];
+  a.amenities.clear();
+  if (am is List && am.isNotEmpty) {
+    for (final x in am) {
+      if (x is! Map) continue;
+      final name = _s(x, 'name');
+      if (name.isEmpty) continue;
+      a.amenities.add(Amenity(
+          _s(x, 'id', name), name, _s(x, 'open', '08:00'), _s(x, 'close', '20:00'), (_num(x, 'mins', 120).toInt() > 0 ? _num(x, 'mins', 120).toInt() : 120), _s(x, 'note')));
+    }
+  }
+  if (a.amenities.isEmpty) a.amenities.addAll(Amenity.defaults());
   final bl = st['blocked'] ?? const <String, dynamic>{};
   a.blockedDay = _s(bl, 'day');
   a.blocked.clear();

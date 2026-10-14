@@ -18,45 +18,65 @@ class _ResBookState extends State<ResBook> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final list = app.amenities;
+    if (fac >= list.length) fac = list.isEmpty ? 0 : list.length - 1;
+    final cur = list.isEmpty ? null : list[fac];
+    if (cur == null) {
+      return TabPage(
+        title: 'Book a facility',
+        subtitle: 'Check availability and send a reservation request.',
+        children: const [EmptyBox('No facilities can be booked yet. Please check again later.', icon: Icons.event_busy_outlined)],
+      );
+    }
+    final slots = cur.slots;
+    if (pick != null && pick! >= slots.length) pick = null;
     return TabPage(
       title: 'Book a facility',
       subtitle: 'Check availability and send a reservation request.',
       children: [
-        Row(
-          children: [
-            for (var i = 0; i < AppState.facilities.length; i++) ...[
-              if (i > 0) const SizedBox(width: 12),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() {
-                    fac = i;
-                    pick = null;
-                  }),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: fac == i ? ink : cs.surface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: fac == i ? ink : cs.outlineVariant),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(i == 0 ? Icons.pool_rounded : Icons.celebration_rounded, color: fac == i ? lav : cs.onSurfaceVariant),
-                        const SizedBox(height: 10),
-                        Text(AppState.facilities[i][0], style: TextStyle(fontWeight: FontWeight.w800, color: fac == i ? Colors.white : cs.onSurface)),
-                        const SizedBox(height: 2),
-                        Text(AppState.facilities[i][1], style: TextStyle(fontSize: 11.5, color: fac == i ? const Color(0xFFB9C3DC) : cs.onSurfaceVariant)),
-                      ],
-                    ),
+        SizedBox(
+          height: 112,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, i) => SizedBox(
+              width: list.length <= 2 ? (MediaQuery.of(context).size.width - 40 - 12) / 2 : 160,
+              child: GestureDetector(
+                onTap: () => setState(() {
+                  fac = i;
+                  pick = null;
+                }),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: fac == i ? ink : cs.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: fac == i ? ink : cs.outlineVariant),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(amenityIcon(list[i].name), color: fac == i ? lav : cs.onSurfaceVariant),
+                      const SizedBox(height: 10),
+                      Text(list[i].name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w800, color: fac == i ? Colors.white : cs.onSurface)),
+                      const SizedBox(height: 2),
+                      Text(list[i].hours,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11.5, color: fac == i ? const Color(0xFFB9C3DC) : cs.onSurfaceVariant)),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ],
+            ),
+          ),
         ),
-        if (fac == 0)
+        if (cur.note.isNotEmpty)
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(color: toneOf(context, Tone.good).bg, borderRadius: BorderRadius.circular(14)),
@@ -67,7 +87,7 @@ class _ResBookState extends State<ResBook> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Free for you as a resident. Guests pay ₱150 per visit, collected at the gate.',
+                    cur.note,
                     style: TextStyle(color: toneOf(context, Tone.good).fg, fontSize: 12.5, height: 1.4),
                   ),
                 ),
@@ -78,7 +98,7 @@ class _ResBookState extends State<ResBook> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('${AppState.facilities[fac][0]} · today', style: hd(18)),
+              Text('${cur.name} · today', style: hd(18)),
               const SizedBox(height: 2),
               Text('Tap an open slot to request it', style: TextStyle(color: muted(context), fontSize: 12.5)),
               const SizedBox(height: 14),
@@ -90,7 +110,7 @@ class _ResBookState extends State<ResBook> {
                 crossAxisSpacing: 10,
                 childAspectRatio: 1.7,
                 children: [
-                  for (var i = 0; i < AppState.slotTimes.length; i++) _slot(context, i),
+                  for (var i = 0; i < slots.length; i++) _slot(context, i, slots[i]),
                 ],
               ),
               const SizedBox(height: 12),
@@ -119,7 +139,7 @@ class _ResBookState extends State<ResBook> {
                     children: [
                       const Text('Your request', style: TextStyle(color: inkSoft, fontSize: 12)),
                       const SizedBox(height: 2),
-                      Text('${AppState.facilities[fac][0]}, ${AppState.slotTimes[pick!]}', style: hd(17, color: ink)),
+                      Text('${cur.name}, ${slots[pick!]}', style: hd(17, color: ink)),
                     ],
                   ),
                 ),
@@ -152,7 +172,7 @@ class _ResBookState extends State<ResBook> {
     ]);
   }
 
-  Widget _slot(BuildContext context, int i) {
+  Widget _slot(BuildContext context, int i, String label) {
     final booked = app.slotBooked(fac, i);
     final picked = pick == i;
     final t = toneOf(context, booked ? Tone.bad : Tone.good);
@@ -168,7 +188,7 @@ class _ResBookState extends State<ResBook> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(AppState.slotTimes[i], style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: picked ? Colors.white : t.fg)),
+            Text(label, textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: picked ? Colors.white : t.fg)),
             Text(booked ? 'Booked' : picked ? 'Selected' : 'Open', style: TextStyle(fontSize: 11, color: picked ? lav : t.fg)),
           ],
         ),
