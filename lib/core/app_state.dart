@@ -655,18 +655,29 @@ class AppState extends ChangeNotifier {
     return open.isEmpty ? null : open.first;
   }
 
-  /// Resident: "I have paid" with the reference number. Returns an error or null.
-  String? submitProof(String method, String reference, String amountRaw) {
+  /// The unpaid charge of [unit] with this note, if any.
+  Due? _openDueNamed(String unit, String note) {
+    for (final d in dues) {
+      if (d.unit == unit && !d.paid && d.note == note) return d;
+    }
+    return null;
+  }
+
+  /// The signed-in resident's charges, newest first.
+  List<Due> get myDues => dues.where((d) => d.unit == myUnit).toList()..sort((a, b) => b.id.compareTo(a.id));
+
+  /// Resident: "I have paid" with the reference number. [due] is the charge being paid (the oldest open one when null).
+  String? submitProof(String method, String reference, String amountRaw, {Due? due}) {
     final a = double.tryParse(amountRaw.trim().replaceAll(',', ''));
     if (a == null || a <= 0) return 'Enter the amount you paid.';
     if (reference.trim().isEmpty) {
       return 'Enter the reference number from your payment receipt.';
     }
-    final due = _firstOpenDue(myUnit);
+    final target = (due != null && !due.paid) ? due : _firstOpenDue(myUnit);
     proofs.insert(
         0,
         PaymentProof(nextId(), myUnit, myHousehold, method, reference.trim(), shortDate(DateTime.now()), a,
-            forText: due == null ? 'Association dues' : due.note));
+            forText: target == null ? 'Association dues' : target.note));
     logActivity('Payment reference sent, $myUnit', 'Finance');
     _n();
     return null;
@@ -752,7 +763,7 @@ class AppState extends ChangeNotifier {
     p.receiptNo = nextReceiptNo();
     p.confirmedOn = shortDate(DateTime.now());
     final isParking = p.forText == parkingPayFor;
-    final due = isParking ? null : _firstOpenDue(p.unit);
+    final due = isParking ? null : (_openDueNamed(p.unit, p.forText) ?? _firstOpenDue(p.unit));
     final String forText;
     if (due != null) {
       due.paid = true;
