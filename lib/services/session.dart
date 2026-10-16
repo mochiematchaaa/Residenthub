@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/core.dart';
 import 'cloud_sync.dart';
+import 'demo.dart';
 import 'supabase_config.dart';
 
 /// The result of an account action: an error message, or (for new/reset accounts) the temporary password.
@@ -44,7 +45,7 @@ class SessionService {
 
   /// Starts Supabase and signs the person in again if their last sign-in is still valid.
   Future<void> init() async {
-    if (!cloudConfigured) {
+    if (kDemo || !cloudConfigured) {
       app.finishBoot();
       return;
     }
@@ -108,6 +109,7 @@ class SessionService {
 
   /// Returns an error message, or null when sign-in worked.
   Future<String?> signIn(String emailRaw, String pass) async {
+    if (kDemo) return demoSignIn(emailRaw, pass);
     final email = emailRaw.trim().toLowerCase();
     if (!ready) return 'The app is not connected to the database.';
     if (email.isEmpty) return 'Enter your email.';
@@ -146,6 +148,10 @@ class SessionService {
   }
 
   Future<void> signOut() async {
+    if (kDemo) {
+      app.clearSession();
+      return;
+    }
     // Never get stuck waiting for the server: a few seconds at most, then clear this device's sign-in.
     try {
       await cloud.end().timeout(const Duration(seconds: 3));
@@ -171,10 +177,12 @@ class SessionService {
     if (admin && ph.isNotEmpty && !AppState.validMobile(AppState.normalizePhone(ph))) {
       return 'Enter a valid mobile number, e.g. 0917 555 0112.';
     }
-    try {
-      await _c.from('profiles').update({'name': name.trim(), if (admin) 'phone': ph}).eq('id', app.userId);
-    } catch (_) {
-      return 'Could not save. Check your internet connection and try again.';
+    if (!kDemo) {
+      try {
+        await _c.from('profiles').update({'name': name.trim(), if (admin) 'phone': ph}).eq('id', app.userId);
+      } catch (_) {
+        return 'Could not save. Check your internet connection and try again.';
+      }
     }
     app.setMyProfile(name.trim(), ph);
     return null;
@@ -255,6 +263,7 @@ class SessionService {
 
   /// Which ways of getting a reset code are set up. Nothing about any account is revealed.
   Future<VerifyOptions> resetOptions() async {
+    if (kDemo) return const VerifyOptions(error: kDemoOff);
     final r = await _reset({'action': 'options'});
     if (r['error'] != null) return VerifyOptions(error: r['error'].toString());
     return VerifyOptions(emailReady: r['emailReady'] == true, smsReady: r['smsReady'] == true);
@@ -263,6 +272,7 @@ class SessionService {
   /// Asks for a password reset: one code goes the way the person chose ('sms' or 'email').
   /// Returns an error, or null. The answer is the same whether or not the email has an account.
   Future<String?> requestPasswordReset(String emailRaw, String channel) async {
+    if (kDemo) return kDemoOff;
     final email = emailRaw.trim().toLowerCase();
     if (!ready) return 'The app is not connected to the database.';
     if (!RegExp(r'^\S+@\S+\.\S+$').hasMatch(email)) return 'Enter the email of your account.';
@@ -272,6 +282,7 @@ class SessionService {
 
   /// Checks the code and sets the new password. Returns an error, or null when it worked.
   Future<String?> confirmPasswordReset(String emailRaw, String channel, String code, String nw, String conf) async {
+    if (kDemo) return kDemoOff;
     final bad = _checkNew(nw, conf);
     if (bad != null) return bad;
     final r = await _reset({
@@ -291,6 +302,7 @@ class SessionService {
 
   /// Change password: the current password is checked first.
   Future<String?> changePassword(String cur, String nw, String conf) async {
+    if (kDemo) return kDemoOff;
     final email = app.role == Role.admin ? app.adminEmail : (app.me?.email ?? '');
     if (cur.isEmpty) return 'Enter your current password.';
     final bad = _checkNew(nw, conf);
@@ -377,6 +389,7 @@ class SessionService {
 
   /// Creates a resident account. The result carries the temporary password to hand over.
   Future<AccountResult> createResident(String name, String email, String phone, String unit) async {
+    if (kDemo) return const AccountResult(error: kDemoOff);
     if (name.trim().isEmpty || email.trim().isEmpty) {
       return const AccountResult(error: 'Full name and email are required.');
     }
@@ -400,12 +413,14 @@ class SessionService {
   }
 
   Future<AccountResult> resetPassword(Account a) async {
+    if (kDemo) return const AccountResult(error: kDemoOff);
     final r = await _call({'action': 'reset-password', 'userId': a.id});
     if (r['error'] != null) return AccountResult(error: r['error'].toString());
     return AccountResult(password: r['password']?.toString());
   }
 
   Future<String?> setSuspended(Account a, bool suspended) async {
+    if (kDemo) return kDemoOff;
     final r = await _call({'action': 'set-suspended', 'userId': a.id, 'suspended': suspended});
     if (r['error'] != null) return r['error'].toString();
     await loadAccounts();
@@ -413,6 +428,7 @@ class SessionService {
   }
 
   Future<String?> deleteAccount(Account a) async {
+    if (kDemo) return kDemoOff;
     final r = await _call({'action': 'delete', 'userId': a.id});
     if (r['error'] != null) return r['error'].toString();
     await loadAccounts();

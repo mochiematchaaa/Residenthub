@@ -10,6 +10,7 @@ import 'screens/auth/new_password_screen.dart';
 import 'screens/auth/verify_contact_screen.dart';
 import 'screens/resident/resident_screens.dart';
 import 'services/cloud_sync.dart' show cloud, CloudState, rootMessengerKey;
+import 'services/demo.dart' show kDemo;
 import 'services/session.dart';
 import 'widgets/widgets.dart';
 
@@ -48,7 +49,7 @@ class ResidentHubApp extends StatelessWidget {
           home = const ResidentShell(key: ValueKey('resident'));
         }
         return MaterialApp(
-          title: 'ResidentHub',
+          title: kDemo ? 'ResidentHub Demo' : 'ResidentHub',
           scaffoldMessengerKey: rootMessengerKey,
           debugShowCheckedModeBanner: false,
           theme: buildTheme(Brightness.light),
