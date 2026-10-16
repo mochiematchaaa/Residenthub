@@ -80,10 +80,44 @@ Skip this step if you only want to look around; sign-in will work but the email 
 3. App: open `lib/services/supabase_config.dart` and replace the URL and the anon key
    (or run it with `flutter run -d chrome --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...`).
 
-### Step 8. Try it
-1. Open the website folder with a small local server (`python3 -m http.server 8000` inside `website/`, or VS Code *Live Server*) and go to `http://localhost:8000/admin.html`.
-2. Sign in with the administrator from Step 4.
-3. Go to **Manage access** and create a resident account. The resident signs in at `resident.html`, chooses their own password, and confirms email/mobile with a code.
+### Step 8. Install the tools (once)
+| Tool | For | Get it |
+|---|---|---|
+| **VS Code** (with the extension **Live Server**) or **Python 3** | running the website on your computer | https://code.visualstudio.com / https://www.python.org |
+| **Google Chrome** | opening the website and the app | https://www.google.com/chrome |
+| **Flutter SDK** (3.22 or newer) | running the app | https://docs.flutter.dev/get-started/install |
+After installing Flutter, open a terminal (PowerShell on Windows, Terminal on Mac) and run `flutter doctor`. You only need the **Flutter** and **Chrome** lines to be green to run the app in Chrome. (Android Studio is only needed for a phone/emulator.)
+
+### Step 9. Run the website with your database
+1. Unzip `ResidentHub-System.zip` (or clone the two repositories: the app repository and the website repository).
+2. Make sure Step 7 is done: `supabase-config.js` (website repository) contains **your** Project URL and anon key. If it still has the original URL, you are connected to the REAL project.
+3. Start a small server in the website folder. Pick one:
+   - **VS Code:** *File, Open Folder*, choose the website folder. Right-click `admin.html`, choose **Open with Live Server**.
+   - **Terminal:** `cd` into the website folder, then `python3 -m http.server 8000` (on Windows: `py -m http.server 8000`). Open `http://localhost:8000/admin.html` in Chrome.
+   (Double-clicking the HTML file does not work; it needs the small server.)
+4. Sign in with the administrator email and password from Step 4. You should see the Dashboard (empty, because a new database has no data).
+5. Add data to try it: **Units**, add a unit (for example `Unit 101`). Then **Manage access**, **Create resident account**: type a name, an email, and choose the Unit. Copy the temporary password that appears (it is shown only once).
+6. Open a second window (Chrome Incognito) at `http://localhost:8000/resident.html` and sign in with that resident account. It asks for a new password, then for the email/mobile codes. If you skipped Step 6, the codes cannot be sent, so for testing use the Demo instead of the real resident flow.
+7. Try: the resident books a facility; in the admin window, **Facility**, approve it. It updates live.
+
+### Step 10. Run the app with your database
+1. Open a terminal in the app folder (this repository)
+2. Download the packages (once): `flutter pub get`
+3. Run it in Chrome, with YOUR project (replace the two values with the ones from Step 7). Write it as one line:
+   ```
+   flutter run -d chrome --dart-define=SUPABASE_URL=https://YOUR-PROJECT.supabase.co --dart-define=SUPABASE_ANON_KEY=YOUR-ANON-KEY
+   ```
+   (If you already edited `lib/services/supabase_config.dart` in Step 7, plain `flutter run -d chrome` is enough.)
+4. The first run takes a few minutes. Chrome opens the app. Sign in with the same administrator or resident accounts. The website and the app share ONE database, so what you add in one appears in the other.
+5. To stop it, press `q` in the terminal.
+6. Optional, an Android phone file (APK): `flutter build apk --release --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...`. The file is in `build/app/outputs/flutter-apk/app-release.apk`. This needs Android Studio / the Android SDK installed.
+
+### Step 11. Check that everything is connected
+1. In the app, as a resident, book a facility.
+2. In the website admin window, open **Facility**. The same request must appear.
+3. Approve it there. In the app, **My reservations** shows it as Approved.
+4. In your Supabase dashboard, **Table Editor**, `records`: you can see the new rows (`kind` = `booking`, `unit`, `value`).
+If all four work, the website, the app and the database are connected.
 
 ### Something wrong?
 | Problem | Check |
@@ -94,3 +128,7 @@ Skip this step if you only want to look around; sign-in will work but the email 
 | Codes are never received | Step 6 secrets, and `verify-contact` deployed? |
 | "Forgot password" fails | `reset-password` deployed with *Verify JWT* OFF? |
 | Data does not appear after login | Step 7: URL and anon key belong to the same project? |
+| Website shows a blank page or says it cannot connect | You opened the file by double-click. Use Step 9 (local server). Press F12, then Console, to read the error. |
+| `flutter` is not recognized | Flutter is not installed or not in PATH; redo Step 8, then close and reopen the terminal. |
+| The app opens but cannot sign in | The two `--dart-define` values are missing or from another project (Step 7). |
+| I see the real project's data | `supabase-config.js` / `supabase_config.dart` still have the original URL. Replace them (Step 7). |
