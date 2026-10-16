@@ -41,7 +41,7 @@ class _AdminFacilityState extends State<AdminFacility> {
     final ok = await confirmDialog(
       context,
       'Remove ${a.name}?',
-      '${live > 0 ? '$live booking${live == 1 ? '' : 's'} for today ${live == 1 ? 'is' : 'are'} still active. ' : ''}'
+      '${live > 0 ? '$live upcoming booking${live == 1 ? ' is' : 's are'} still active. ' : ''}'
       'Past reservations stay in the list. Residents can no longer book it.',
       confirm: 'Remove',
       destructive: true,
