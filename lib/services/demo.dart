@@ -90,100 +90,156 @@ String _slotLabel(int open, int mins, int i) {
       : '${_clock(s)} ${_ap(s)}–${_clock(e)} ${_ap(e)}';
 }
 
+// A small fixed random generator, so the sample data looks the same every time.
+int _rs = 20261016;
+double _rnd() {
+  _rs = (_rs * 1664525 + 1013904223) % 4294967296;
+  return _rs / 4294967296;
+}
+
+int _ri(int a, int b) => a + (_rnd() * (b - a + 1)).floor();
+T _pick<T>(List<T> a) => a[(_rnd() * a.length).floor()];
+
+const _surnames = [
+  'Santos', 'Dela Cruz', 'Ocampo', 'Garcia', 'Mendoza', 'Torres', 'Bautista', 'Reyes', 'Castillo', 'Flores', 'Villanueva', 'Ramos',
+  'Aquino', 'Navarro', 'Lim', 'Tan', 'Chua', 'Salazar', 'Domingo', 'Gonzales', 'Aguilar', 'Pascual', 'Rivera', 'Mercado', 'Santiago',
+  'Soriano', 'Del Rosario', 'Valdez', 'Manalo', 'Lopez', 'Fernandez', 'Diaz', 'Perez', 'Cabrera', 'Evangelista', 'Magsaysay',
+];
+const _firstNames = [
+  'Elena', 'Paolo', 'Rhea', 'Carlo', 'Liza', 'Marco', 'Rico', 'Maria', 'Jenny', 'Noel', 'Cathy', 'Dennis', 'Joy', 'Ben', 'Grace',
+  'Victor', 'Anna', 'Ramon', 'Joanna', 'Mark', 'Teresa', 'Leo', 'Kristine', 'Allan', 'Bea', 'Jun', 'Nina', 'Edgar', 'Faye', 'Rommel',
+  'Lyn', 'Gerald', 'Trixie', 'Albert', 'Sheila', 'Dante',
+];
+
+class _DemoUnit {
+  final int i;
+  final String label, house, type, status, contact, person, key;
+  const _DemoUnit(this.i, this.label, this.house, this.type, this.status, this.contact, this.person, this.key);
+  bool get occupied => status == 'Occupied';
+}
+
+/// 12 floors x A, B, C. Unit 3B is the demo resident (Maria Reyes).
+List<_DemoUnit> _demoUnits() {
+  final out = <_DemoUnit>[];
+  for (var f = 1; f <= 12; f++) {
+    for (final l in const ['A', 'B', 'C']) {
+      final i = out.length;
+      final vacant = i % 9 == 4;
+      final tenant = !vacant && i % 5 == 3;
+      final key = i == 7 ? 'resident' : '${_firstNames[i]}.${_surnames[i]}'.toLowerCase().replaceAll(RegExp(r'[^a-z.]'), '');
+      out.add(_DemoUnit(i, 'Unit $f$l', '${_surnames[i]}${i % 2 == 1 ? ' Household' : ' Family'}', tenant ? 'Tenant' : 'Owner',
+          vacant ? 'Vacant' : 'Occupied', '0917 000 ${1100 + i + 1}', '${_firstNames[i]} ${_surnames[i]}', key));
+    }
+  }
+  return out;
+}
+
 List<Account> _demoAccounts() {
   final added = _sd(_off(-60));
-  Account a(String id, String name, String email, String phone, String unit) =>
-      Account(id, name, email, phone, unit, 'Resident', added, verified: true);
+  final occ = _demoUnits().where((u) => u.occupied).take(24).toList();
   return [
-    a('demo-u0', 'Elena Santos', 'elena.santos@demo.test', '0917 000 1101', 'Unit 1A'),
-    a('demo-u1', 'Paolo Dela Cruz', 'paolo.delacruz@demo.test', '0917 000 1102', 'Unit 2B'),
-    a('demo-u2', 'Maria Reyes', kDemoResidentEmail, '0917 000 1103', 'Unit 3B'),
-    a('demo-u3', 'Carlo Garcia', 'carlo.garcia@demo.test', '0917 000 1104', 'Unit 5A'),
-    a('demo-u4', 'Liza Mendoza', 'liza.mendoza@demo.test', '0917 000 1105', 'Unit 5C'),
-    a('demo-u5', 'Rico Bautista', 'rico.bautista@demo.test', '0917 000 1106', 'Unit 7C'),
-    a('demo-u6', 'Joy Aquino', 'joy.aquino@demo.test', '0917 000 1107', 'Unit 8A'),
-    a('demo-u7', 'Grace Lim', 'grace.lim@demo.test', '0917 000 1108', 'Unit 9B'),
+    for (final u in occ) Account('demo-u${u.i}', u.person, '${u.key}@demo.test', u.contact, u.label, 'Resident', added, verified: true),
   ];
 }
 
 List<CRow> _demoRows() {
+  _rs = 20261016;
   final now = DateTime.now();
   final year = now.year;
   final rows = <CRow>[];
   var seq = 0;
-  int tid() => now.millisecondsSinceEpoch - 1000000 + (++seq);
+  int tid() => now.millisecondsSinceEpoch - 100000000 + (++seq);
   void r(String kind, Object id, String unit, Map<String, dynamic> value) => rows.add(CRow(kind, '$id', unit, value));
+  DateTime monthDate(int offMonths, int day) => DateTime(now.year, now.month + offMonths, day, 12);
 
-  // ---- units: [label, household, type, status, contact]
-  const units = <List<String>>[
-    ['Unit 1A', 'Santos Family', 'Owner', 'Occupied', '0917 000 1101'],
-    ['Unit 2B', 'Dela Cruz Household', 'Owner', 'Occupied', '0917 000 1102'],
-    ['Unit 3B', 'Reyes Household', 'Owner', 'Occupied', '0917 000 1103'],
-    ['Unit 5A', 'Garcia Family', 'Tenant', 'Occupied', '0917 000 1104'],
-    ['Unit 5C', 'Mendoza Household', 'Owner', 'Occupied', '0917 000 1105'],
-    ['Unit 7C', 'Bautista Family', 'Owner', 'Occupied', '0917 000 1106'],
-    ['Unit 8A', 'Aquino Household', 'Tenant', 'Occupied', '0917 000 1107'],
-    ['Unit 9B', 'Lim Household', 'Owner', 'Occupied', '0917 000 1108'],
-    ['Unit 10A', 'Tan Family', 'Owner', 'Occupied', '0917 000 1109'],
-    ['Unit 11C', 'Ramos Household', 'Owner', 'Vacant', '0917 000 1110'],
-    ['Unit 12A', 'Navarro Family', 'Owner', 'Occupied', '0917 000 1111'],
-    ['Unit 12B', 'Cruz Household', 'Owner', 'Vacant', '0917 000 1112'],
-  ];
+  // ---- units
+  final units = _demoUnits();
+  final occ = units.where((u) => u.occupied).toList();
+  final withAcc = occ.take(24).toList();
   final byUnit = <String, Map<String, dynamic>>{};
   for (final u in units) {
-    byUnit[u[0]] = <String, dynamic>{
-      'unit': u[0],
-      'name': u[1],
-      'type': u[2],
-      'status': u[3],
-      'contact': u[4],
-      'usage': u[2] == 'Tenant' ? 'tenant' : 'owner',
+    byUnit[u.label] = <String, dynamic>{
+      'unit': u.label,
+      'name': u.house,
+      'type': u.type,
+      'status': u.status,
+      'contact': u.contact,
+      'usage': u.type == 'Tenant' ? 'tenant' : 'owner',
     };
   }
-  byUnit['Unit 5A']!['usageStatus'] = 'approved';
-  byUnit['Unit 5A']!['usageInfo'] = <String, dynamic>{
-    'tname': 'Carlo Garcia',
-    'tphone': '0917 000 1104',
-    'occupants': '3',
-    'start': _dk(_off(-200)),
-    'end': _dk(_off(165)),
-    'emerg': 'Ana Garcia, 0917 000 2204',
-    'plates': 'ABC 1234',
-    'agree': true,
-  };
-  byUnit['Unit 8A']!['usageStatus'] = 'pending';
-  byUnit['Unit 8A']!['usageInfo'] = <String, dynamic>{
-    'tname': 'Joy Aquino',
-    'tphone': '0917 000 1107',
-    'occupants': '2',
-    'start': _dk(_off(5)),
-    'end': _dk(_off(370)),
-    'emerg': 'Ben Aquino, 0917 000 2207',
-    'agree': true,
-  };
-  byUnit['Unit 9B']!['usage'] = 'shortterm';
-  byUnit['Unit 9B']!['usageStatus'] = 'approved';
-  byUnit['Unit 9B']!['usageInfo'] = <String, dynamic>{
-    'platform': 'Airbnb',
-    'contact': 'Grace Lim',
-    'phone': '0917 000 1108',
-    'maxGuests': '4',
-    'start': _dk(_off(-120)),
-    'listing': 'Cozy studio near the park',
-    'agree': true,
-  };
-  byUnit['Unit 12A']!['usage'] = 'renovation';
-  byUnit['Unit 12A']!['usageStatus'] = 'pending';
-  byUnit['Unit 12A']!['usageInfo'] = <String, dynamic>{
-    'work': 'New tiles in the kitchen and bathroom',
-    'contractor': 'J. Villanueva Builders',
-    'phone': '0917 000 3312',
-    'start': _dk(_off(8)),
-    'end': _dk(_off(30)),
-    'agree': true,
-  };
+  Map<String, dynamic> tenantInfo(_DemoUnit u, int from, int to) => <String, dynamic>{
+        'tname': u.person,
+        'tphone': u.contact,
+        'occupants': '${_ri(1, 4)}',
+        'start': _dk(_off(from)),
+        'end': _dk(_off(to)),
+        'emerg': '${_pick(_firstNames)} ${u.house.split(' ').first}, 0917 000 ${_ri(2000, 2999)}',
+        'plates': 'ABC ${_ri(1000, 9999)}',
+        'agree': true,
+      };
+  final tenants = units.where((u) => u.type == 'Tenant' && u.occupied).toList();
+  for (var k = 0; k < tenants.length; k++) {
+    final b = byUnit[tenants[k].label]!;
+    if (k == 1) {
+      b['usageStatus'] = 'pending';
+      b['usageInfo'] = tenantInfo(tenants[k], 5, 370);
+    } else if (k == 4) {
+      b['usageStatus'] = 'rejected';
+      b['usageRemark'] = 'The lease dates are missing. Please send the signed lease to the office.';
+      b['usageInfo'] = tenantInfo(tenants[k], -3, 360);
+    } else {
+      b['usageStatus'] = 'approved';
+      b['usageInfo'] = tenantInfo(tenants[k], -_ri(60, 300), _ri(60, 300));
+    }
+  }
+  const usages = <List<Object>>[
+    [9, 'shortterm'],
+    [20, 'shortterm'],
+    [11, 'business'],
+    [14, 'renovation'],
+    [25, 'renovation'],
+    [16, 'business'],
+  ];
+  for (var k = 0; k < usages.length; k++) {
+    final u = units[usages[k][0] as int];
+    if (!u.occupied) continue;
+    final kind = usages[k][1] as String;
+    final b = byUnit[u.label]!;
+    b['usage'] = kind;
+    b['usageStatus'] = (k == 3 || k == 5) ? 'pending' : 'approved';
+    if (kind == 'shortterm') {
+      b['usageInfo'] = <String, dynamic>{
+        'platform': _pick(const ['Airbnb', 'Booking.com', 'Agoda']),
+        'contact': u.person,
+        'phone': u.contact,
+        'maxGuests': '${_ri(2, 5)}',
+        'start': _dk(_off(-_ri(30, 200))),
+        'listing': 'Cozy unit with city view',
+        'agree': true,
+      };
+    } else if (kind == 'business') {
+      b['usageInfo'] = <String, dynamic>{
+        'bname': '${u.person.split(' ').last} Online Shop',
+        'btype': _pick(const ['Online selling', 'Tutoring', 'Home office', 'Baking']),
+        'permit': 'DTI-${_ri(100000, 999999)}',
+        'hours': 'Mon to Fri, 9 AM to 5 PM',
+        'visitors': '${_ri(1, 6)}',
+        'phone': u.contact,
+        'agree': true,
+      };
+    } else {
+      b['usageInfo'] = <String, dynamic>{
+        'work': _pick(const ['New tiles in the kitchen and bathroom', 'Repainting and new ceiling', 'New cabinets and countertop']),
+        'contractor': _pick(const ['J. Villanueva Builders', 'Metro Renovations', 'Santos Interiors']),
+        'phone': '0917 000 ${_ri(3000, 3999)}',
+        'start': _dk(_off(_ri(3, 12))),
+        'end': _dk(_off(_ri(20, 45))),
+        'agree': true,
+      };
+    }
+  }
   for (final u in units) {
-    r('unit', u[0], u[0], byUnit[u[0]]!);
+    r('unit', u.label, u.label, byUnit[u.label]!);
   }
 
   // ---- settings
@@ -209,6 +265,8 @@ List<CRow> _demoRows() {
       {'name': 'Security desk', 'note': 'Open 24 hours', 'tel': 'Local 101'},
       {'name': 'Administration office', 'note': 'Mon to Sat, 8 AM to 5 PM', 'tel': 'Local 110'},
       {'name': 'Building engineer', 'note': 'Repairs and maintenance', 'tel': 'Local 120'},
+      {'name': 'Housekeeping', 'note': 'Common areas and garbage', 'tel': 'Local 130'},
+      {'name': 'Parking office', 'note': 'Motor parking rentals', 'tel': 'Local 140'},
       {'name': 'Emergency hotline', 'note': 'Fire, medical, police', 'tel': '911'},
     ],
     'rules': [
@@ -216,53 +274,54 @@ List<CRow> _demoRows() {
       ['Garbage', 'Bag your garbage and put it in the chute room on your floor. No bulky items.'],
       ['Visitors', 'Visitors must register at the lobby and leave a valid ID.'],
       ['Pets', 'Pets must be on a leash in the common areas.'],
+      ['Moving in or out', 'Tell the office three days before and use the service elevator.'],
+      ['Smoking', 'No smoking in the lobby, hallways, elevators and amenities.'],
     ],
   });
 
-  // ---- dues and payments: two months paid, this month open (a few units already paid this month)
-  final houses = units.where((u) => u[3] == 'Occupied').toList();
-  const paidThisMonth = ['Unit 1A', 'Unit 2B', 'Unit 5C', 'Unit 9B', 'Unit 10A'];
+  // ---- dues and payments: two months back (mostly paid) and this month
   var receipt = 0;
-  for (var hi = 0; hi < houses.length; hi++) {
-    final u = houses[hi];
-    for (final off in [-2, -1, 0]) {
-      final dd = DateTime(now.year, now.month + off, 25, 12);
+  const methods = ['Cash or check at the office', 'GCash', 'Bank transfer'];
+  for (var hi = 0; hi < occ.length; hi++) {
+    final u = occ[hi];
+    for (final off in const [-2, -1, 0]) {
+      final dd = monthDate(off, 25);
       final note = 'Association dues - ${_monLong[dd.month - 1]} ${dd.year}';
       final idn = DateTime(dd.year, dd.month, 1, 9).millisecondsSinceEpoch + hi;
-      final paid = (off < 0 && !(u[0] == 'Unit 5A' && off == -1)) || (off == 0 && paidThisMonth.contains(u[0]));
-      r('due', idn, u[0], {
+      final bool paid = off < 0 ? !(off == -1 && hi % 9 == 3) && !(off == -2 && hi % 23 == 5) : (hi % 5 == 0 || hi % 5 == 2);
+      r('due', idn, u.label, {
         'id': idn,
-        'unit': u[0],
-        'name': u[1],
+        'unit': u.label,
+        'name': u.house,
         'amount': 2500,
         'note': note,
         'dueDate': _sd(dd),
         if (paid) 'paid': true,
       });
       if (paid) {
-        var pd = DateTime(dd.year, dd.month, 8 + (hi * 2) % 15, 12);
+        var pd = monthDate(off, 3 + (hi * 3 + off * 5 + 40) % 17);
         if (pd.isAfter(now)) {
-          pd = DateTime(now.year, now.month, now.day - hi > 0 ? now.day - hi : 1, 12);
+          pd = DateTime(now.year, now.month, now.day - (hi % 10) > 0 ? now.day - (hi % 10) : 1, 12);
         }
         receipt++;
         final no = 'OR-$year-${receipt.toString().padLeft(4, '0')}';
-        final method = const ['Cash or check at the office', 'GCash', 'Bank transfer'][(hi + off + 2) % 3];
-        final ref = method == 'Cash or check at the office' ? '—' : 'REF${700000 + receipt * 37}';
-        r('payment', idn + 5, u[0], {
-          'id': idn + 5,
+        final method = methods[(hi + off + 2) % 3];
+        final ref = method == methods[0] ? '—' : 'REF${700000 + receipt * 37}';
+        r('payment', idn + 5000, u.label, {
+          'id': idn + 5000,
           'receiptNo': no,
-          'unit': u[0],
-          'payer': u[1],
+          'unit': u.label,
+          'payer': u.house,
           'forText': note,
           'method': method,
           'reference': ref,
           'date': _sd(pd),
           'amount': 2500,
         });
-        r('proof', idn + 7, u[0], {
-          'id': idn + 7,
-          'unit': u[0],
-          'payer': u[1],
+        r('proof', idn + 7000, u.label, {
+          'id': idn + 7000,
+          'unit': u.label,
+          'payer': u.house,
           'forText': note,
           'method': method,
           'reference': ref,
@@ -272,62 +331,80 @@ List<CRow> _demoRows() {
           'receiptNo': no,
           'confirmedOn': _sd(pd),
         });
+      } else if (off == 0 && hi % 7 == 1) {
+        r('proof', idn + 7000, u.label, {
+          'id': idn + 7000,
+          'unit': u.label,
+          'payer': u.house,
+          'forText': note,
+          'method': 'GCash',
+          'reference': 'GC${year * 1000000 + 101400 + hi}',
+          'amount': 2500,
+          'date': _sd(_off(-(hi % 3))),
+          'status': 'Pending',
+        });
       }
+    }
+    if (hi % 6 == 0) {
+      final xid = tid();
+      r('due', xid, u.label, {
+        'id': xid,
+        'unit': u.label,
+        'name': u.house,
+        'amount': 300,
+        'note': 'Parking sticker fee',
+        'dueDate': _sd(_off(5 + hi % 6)),
+      });
     }
   }
   final sid = tid();
   r('due', sid, 'Unit 3B', {
     'id': sid,
     'unit': 'Unit 3B',
-    'name': 'Reyes Household',
+    'name': byUnit['Unit 3B']!['name'],
     'amount': 800,
     'note': 'Special assessment - elevator repair',
     'dueDate': _sd(_off(9)),
   });
-  final thisMonth = DateTime(now.year, now.month, 25, 12);
-  final note12 = 'Association dues - ${_monLong[thisMonth.month - 1]} ${thisMonth.year}';
-  final p12 = tid();
-  r('proof', p12, 'Unit 12A', {
-    'id': p12,
-    'unit': 'Unit 12A',
-    'payer': 'Navarro Family',
-    'forText': note12,
-    'method': 'GCash',
-    'reference': 'GC${year * 1000000 + 101401}',
-    'amount': 2500,
-    'date': _sd(_off(-1)),
-    'status': 'Pending',
-  });
 
-  // ---- expenses (administrator only)
-  const exp = <List<Object>>[
-    ['Security guards - monthly contract', 'Security services', 'Whole building', 'SafeGuard Agency (sample)', 1, 38000, -3],
-    ['Common-area electricity', 'Common-area utilities', 'Lobby and common areas', 'Sample Power Co.', 1, 21450.5, -5],
-    ['Water bill (common areas and pool)', 'Common-area utilities', 'Swimming pool', 'Sample Water District', 1, 8920, -6],
-    ['Janitorial supplies', 'Janitorial and maintenance', 'Whole building', 'CleanPro Supplies', 12, 310, -9],
-    ['Elevator B servicing', 'Repairs and improvements', 'Elevators', 'LiftCare Services', 1, 15500, -14],
-    ['Light bulbs for hallways', 'Supplies and equipment', 'Lobby and common areas', 'Hardware Depot', 24, 85.5, -18],
-    ['Pool chemicals', 'Supplies and equipment', 'Swimming pool', 'AquaPure Trading', 6, 640, -25],
-    ['Building insurance (quarterly)', 'Insurance', 'Whole building', 'Sample Insurance', 1, 27500, -33],
-    ['Security guards - monthly contract', 'Security services', 'Whole building', 'SafeGuard Agency (sample)', 1, 38000, -33],
-    ['Parking lot repainting', 'Repairs and improvements', 'Parking', 'ColorWorks Painting', 1, 12400, -47],
-    ['Reserve fund deposit', 'Administration and reserve fund', 'Whole building', 'Bank deposit', 1, 20000, -62],
-  ];
-  for (var i = 0; i < exp.length; i++) {
-    final e = exp[i];
+  // ---- expenses (administrator only), six months
+  var rc = 4100;
+  void exp(String item, String cat, String area, String payee, int qty, num price, int offMonths, int day) {
+    final d = monthDate(offMonths, day);
+    if (d.isAfter(now)) return;
     final id = tid();
+    rc += 7;
     r('expense', id, '__admin', {
       'id': id,
-      'item': e[0],
-      'category': e[1],
-      'area': e[2],
-      'payee': e[3],
-      'receiptNo': 'R-${4100 + i * 7}',
-      'qty': e[4],
-      'unitPrice': e[5],
-      'date': _dk(_off(e[6] as int)),
+      'item': item,
+      'category': cat,
+      'area': area,
+      'payee': payee,
+      'receiptNo': 'R-$rc',
+      'qty': qty,
+      'unitPrice': price,
+      'date': _dk(d),
     });
   }
+
+  for (var m = 0; m >= -5; m--) {
+    exp('Security guards - monthly contract', 'Security services', 'Whole building', 'SafeGuard Agency (sample)', 1, 38000, m, 3);
+    exp('Common-area electricity', 'Common-area utilities', 'Lobby and common areas', 'Sample Power Co.', 1, 19000 + _ri(0, 5000) + 0.5, m, 6);
+    exp('Water bill (common areas and pool)', 'Common-area utilities', 'Swimming pool', 'Sample Water District', 1, 7500 + _ri(0, 2000), m, 8);
+    exp('Janitorial supplies', 'Janitorial and maintenance', 'Whole building', 'CleanPro Supplies', _ri(8, 14), 310, m, 11);
+    exp('Garbage hauling', 'Janitorial and maintenance', 'Whole building', 'GreenCity Hauling', 1, 4500, m, 14);
+    exp('Pool chemicals', 'Supplies and equipment', 'Swimming pool', 'AquaPure Trading', _ri(4, 7), 640, m, 17);
+    exp('Reserve fund deposit', 'Administration and reserve fund', 'Whole building', 'Bank deposit', 1, 20000, m, 26);
+    if (m % 3 == 0) {
+      exp('Elevator servicing', 'Repairs and improvements', 'Elevators', 'LiftCare Services', 1, 15500, m, 19);
+      exp('Pest control (quarterly)', 'Janitorial and maintenance', 'Whole building', 'BugAway Services', 1, 9800, m, 21);
+      exp('Building insurance (quarterly)', 'Insurance', 'Whole building', 'Sample Insurance', 1, 27500, m, 23);
+    }
+    if (m % 2 == 0) exp('CCTV maintenance', 'Repairs and improvements', 'Whole building', 'SecureView Tech', 1, 6200, m, 22);
+  }
+  exp('Parking lot repainting', 'Repairs and improvements', 'Parking', 'ColorWorks Painting', 1, 12400, -2, 12);
+  exp('Light bulbs for hallways', 'Supplies and equipment', 'Lobby and common areas', 'Hardware Depot', 24, 85.5, -1, 9);
+  exp('Lobby plants and landscaping', 'Janitorial and maintenance', 'Lobby and common areas', 'Green Thumb Landscaping', 1, 5400, -1, 18);
 
   // ---- announcements, events, polls
   void ann(String title, String body, String type, int off, [String status = 'Published']) {
@@ -340,6 +417,11 @@ List<CRow> _demoRows() {
   ann('Reminder: dues are due on the 25th', 'Association dues are due every 25th of the month. Pay online in the Dues page or at the office.', 'General', -4);
   ann('Fire drill next week', "A building-wide fire drill will be held next Thursday at 2 PM. Please follow the guards' instructions.", 'Warning', -6);
   ann('Halloween trick-or-treat in the lobby', 'Kids are welcome to trick-or-treat on October 31 from 4 to 6 PM. Costumes encouraged!', 'General', -8);
+  ann('Pest control schedule', 'Pest control will visit the floors on Wednesday from 9 AM. Please let the staff in or tell the office if you prefer another day.', 'Maintenance', -10);
+  ann('New rule: parking stickers', 'All motor parking users must display the new sticker. Get yours at the office for ₱300.', 'General', -13);
+  ann('Typhoon advisory', 'Please keep windows closed and move plants indoors. The guards will lock the pool and the gym when the signal is raised.', 'Emergency', -16);
+  ann('Lost and found at the lobby', 'A set of keys and a blue umbrella were found near the elevator. Claim them at the guard desk.', 'General', -20);
+  ann('Thank you for the clean-up drive', "Thank you to everyone who joined last month's clean-up. The lobby planters are now back.", 'General', -27);
   ann('Year-end party planning', 'Draft: we are collecting ideas for the year-end party. Details to follow.', 'General', -1, 'Draft');
 
   int evt(String title, int off, String time, String place, String about) {
@@ -348,131 +430,161 @@ List<CRow> _demoRows() {
     return id;
   }
 
-  final e1 = evt('Community clean-up drive', 8, '7:00 AM', 'Lobby', 'Bring gloves and a reusable bag. Snacks provided.');
-  final e2 = evt('Kids Halloween party', 15, '4:00 PM', 'Function Hall', 'Games, costumes and treats for the kids of the building.');
-  evt('Quarterly general assembly', 25, '6:00 PM', 'Function Hall', 'Updates on the budget and the lobby repainting.');
-  for (final x in [
-    ['Unit 1A', e1],
-    ['Unit 3B', e2],
-    ['Unit 5C', e1],
-    ['Unit 7C', e2],
-    ['Unit 9B', e2],
-    ['Unit 3B', e1],
-  ]) {
-    r('rsvp', '${x[0]}|${x[1]}', x[0] as String, {'event': x[1]});
-  }
-  final p1 = tid(), p2 = tid();
-  r('poll', p1, '', {
-    'id': p1,
-    'question': 'Should the lobby be repainted this year?',
-    'open': true,
-    'closes': _sd(_off(6)),
-    'options': ['Yes, with a new color', 'Yes, same color', 'No, not needed'],
-  });
-  r('poll', p2, '', {
-    'id': p2,
-    'question': 'Best day for the quarterly general assembly?',
-    'open': false,
-    'closes': _sd(_off(-12)),
-    'options': ['Saturday morning', 'Saturday evening', 'Sunday afternoon'],
-  });
-  for (final x in [['Unit 1A', 0], ['Unit 2B', 1], ['Unit 5A', 0], ['Unit 5C', 0], ['Unit 7C', 2], ['Unit 9B', 1]]) {
-    r('vote', '${x[0]}|$p1', x[0] as String, {'poll': p1, 'option': x[1]});
-  }
-  for (final x in [['Unit 1A', 1], ['Unit 2B', 1], ['Unit 3B', 0], ['Unit 5C', 1], ['Unit 7C', 2], ['Unit 8A', 1], ['Unit 9B', 0]]) {
-    r('vote', '${x[0]}|$p2', x[0] as String, {'poll': p2, 'option': x[1]});
-  }
-
-  // ---- bookings: [unit, amenity index, time index, day offset, status]
-  const bookings = <List<Object>>[
-    ['Unit 3B', 0, 2, 6, 'Approved'],
-    ['Unit 3B', 1, 0, 3, 'Pending'],
-    ['Unit 1A', 0, 0, 7, 'Approved'],
-    ['Unit 2B', 0, 1, 2, 'Pending'],
-    ['Unit 5C', 1, 4, 0, 'Approved'],
-    ['Unit 7C', 2, 1, 3, 'Pending'],
-    ['Unit 9B', 0, 3, 1, 'Denied'],
-    ['Unit 10A', 3, 2, 4, 'Approved'],
-    ['Unit 1A', 0, 0, -3, 'Approved'],
-    ['Unit 5A', 2, 1, -2, 'Approved'],
-    ['Unit 3B', 0, 4, -6, 'Approved'],
-    ['Unit 7C', 3, 3, 5, 'Pending'],
-    ['Unit 2B', 2, 5, 9, 'Approved'],
-    ['Unit 8A', 0, 3, 12, 'Pending'],
+  final events = <int>[
+    evt('Community clean-up drive', 8, '7:00 AM', 'Lobby', 'Bring gloves and a reusable bag. Snacks provided.'),
+    evt('Kids Halloween party', 15, '4:00 PM', 'Function Hall', 'Games, costumes and treats for the kids of the building.'),
+    evt('Quarterly general assembly', 25, '6:00 PM', 'Function Hall', 'Updates on the budget and the lobby repainting.'),
+    evt('Morning yoga by the pool', 4, '6:30 AM', 'Pool deck', 'Bring your own mat. Free for residents.'),
+    evt('Blood donation drive', 11, '9:00 AM', 'Function Hall', 'In partnership with the barangay health center.'),
+    evt('Christmas lights switch-on', 40, '6:00 PM', 'Lobby', 'Hot chocolate and carols for the whole building.'),
   ];
-  int toMin(String t) {
-    final p = t.split(':');
-    return int.parse(p[0]) * 60 + int.parse(p[1]);
+  final going = <String>{};
+  for (final eid in events) {
+    for (final u in withAcc) {
+      if (_rnd() < 0.35) going.add('${u.label}|$eid');
+    }
+  }
+  going.add('Unit 3B|${events[1]}');
+  going.add('Unit 3B|${events[0]}');
+  for (final key in going) {
+    final unit = key.split('|').first;
+    r('rsvp', key, unit, {'event': int.parse(key.split('|').last)});
+  }
+  const polls = <List<Object>>[
+    ['Should the lobby be repainted this year?', true, 6, ['Yes, with a new color', 'Yes, same color', 'No, not needed']],
+    ['Best day for the quarterly general assembly?', false, -12, ['Saturday morning', 'Saturday evening', 'Sunday afternoon']],
+    ['Add more CCTV cameras in the parking area?', true, 10, ['Yes', 'No', 'Not sure']],
+    ['How big should the Christmas party budget be?', true, 14, ['₱20,000', '₱35,000', '₱50,000']],
+  ];
+  for (final p in polls) {
+    final id = tid();
+    final opts = (p[3] as List).cast<String>();
+    r('poll', id, '', {'id': id, 'question': p[0], 'open': p[1], 'closes': _sd(_off(p[2] as int)), 'options': opts});
+    for (final u in withAcc) {
+      if (u.label == 'Unit 3B' && !(p[0] as String).startsWith('Best day')) continue;
+      if (_rnd() < 0.65) r('vote', '${u.label}|$id', u.label, {'poll': id, 'option': (_rnd() * opts.length).floor()});
+    }
   }
 
-  for (final b in bookings) {
-    final a = amenities[b[1] as int];
-    final d = _off(b[3] as int);
+  // ---- bookings
+  int toMin(String t) {
+    final q = t.split(':');
+    return int.parse(q[0]) * 60 + int.parse(q[1]);
+  }
+
+  int slotCount(Map<String, dynamic> a) => (toMin(a['close'] as String) - toMin(a['open'] as String)) ~/ (a['mins'] as int);
+  final used = <String>{};
+  bool book(String unit, int ai, int si, int off, String status) {
+    final a = amenities[ai];
+    final d = _off(off);
+    final key = '$ai|${_dk(d)}|$si';
+    if (!used.add(key)) return false;
     final id = tid();
-    final unit = b[0] as String;
     r('booking', id, unit, {
       'id': id,
       'who': byUnit[unit]!['name'],
       'unit': unit,
       'place': a['name'],
-      'when': '${_sd(d)}, ${_slotLabel(toMin(a['open'] as String), a['mins'] as int, b[2] as int)}',
-      'status': b[4],
+      'when': '${_sd(d)}, ${_slotLabel(toMin(a['open'] as String), a['mins'] as int, si)}',
+      'status': status,
       'day': _dk(d),
-      'slot': b[2],
+      'slot': si,
     });
+    return true;
+  }
+
+  book('Unit 3B', 0, 2, 6, 'Approved');
+  book('Unit 3B', 1, 0, 3, 'Pending');
+  book('Unit 3B', 0, 4, -6, 'Approved');
+  var made = 0, tries = 0;
+  while (made < 52 && tries++ < 600) {
+    final u = _pick(withAcc);
+    final off = _ri(-12, 14);
+    final ai = (_rnd() * 4).floor();
+    final si = (_rnd() * slotCount(amenities[ai])).floor();
+    final x = _rnd();
+    final status = off < 0 ? (x < 0.85 ? 'Approved' : 'Denied') : (x < 0.55 ? 'Approved' : x < 0.88 ? 'Pending' : 'Denied');
+    if (book(u.label, ai, si, off, status)) made++;
   }
 
   // ---- grievances: stage 0 open, 1 in progress, 2 resolved
-  const griev = <List<Object>>[
-    ['Unit 3B', 'Leaking pipe in the 3rd floor hallway', 'Water drips from the ceiling near the elevator.', 1],
-    ['Unit 3B', 'Broken hallway light', 'The light outside Unit 3B keeps flickering.', 2],
-    ['Unit 5C', 'Noise from a late-night gathering', 'Loud music past midnight on the weekend.', 0],
-    ['Unit 7C', 'Parking gate sensor not working', 'The gate sometimes does not open for residents.', 1],
-    ['Unit 9B', 'Treadmill in the gym is broken', 'The second treadmill stops after a few minutes.', 0],
+  const griev = <List<String>>[
+    ['Leaking pipe in the hallway', 'Water drips from the ceiling near the elevator.'],
+    ['Broken hallway light', 'The light outside the unit keeps flickering.'],
+    ['Noise from a late-night gathering', 'Loud music past midnight on the weekend.'],
+    ['Parking gate sensor not working', 'The gate sometimes does not open for residents.'],
+    ['Treadmill in the gym is broken', 'The second treadmill stops after a few minutes.'],
+    ['Elevator A makes a grinding sound', 'A loud noise between the 7th and 8th floor.'],
+    ['Garbage left in the hallway', 'Bags were left outside the chute room again.'],
+    ['Pool tiles are slippery', 'The shallow end is slippery in the morning.'],
+    ['No hot water in the gym shower', 'Cold water only since Monday.'],
+    ['Intercom not working', 'The lobby intercom does not ring in the unit.'],
+    ['Water pressure is low', 'Very weak water pressure in the evening.'],
+    ['Smoking in the stairwell', 'A smell of cigarette smoke on the 5th floor stairs.'],
+    ['Stray cat in the parking area', 'A cat is trapped near the motor parking.'],
+    ['Lobby aircon too cold', 'The lobby aircon is set too low in the morning.'],
   ];
   for (var i = 0; i < griev.length; i++) {
-    final g = griev[i];
-    final id = tid() - i * 86400000;
-    r('grievance', id, g[0] as String, {'id': id, 'title': g[1], 'body': g[2], 'by': g[0], 'stage': g[3]});
+    final id = tid() - i * 129600000;
+    final u = i < 2 ? units[7] : _pick(withAcc);
+    final st = i < 2 ? (i == 0 ? 1 : 2) : (_rnd() < 0.35 ? 0 : _rnd() < 0.5 ? 1 : 2);
+    r('grievance', id, u.label, {'id': id, 'title': griev[i][0], 'body': griev[i][1], 'by': u.label, 'stage': st});
   }
 
-  // ---- motor parking
-  const rented = ['M-02', 'M-04', 'M-08'];
-  for (var i = 1; i <= 12; i++) {
-    final id = 'M-${_two(i)}';
-    if (!rented.contains(id)) r('slot', id, '', {'id': id});
-  }
+  // ---- motor parking: 20 slots
+  final rented = <String>{};
   void rent(String id, String unit, String plan, int off, int days, int amount) {
+    rented.add(id);
     r('slot', id, '', {'id': id, 'unit': unit, 'plan': plan, 'from': _dk(_off(off)), 'until': _dk(_off(off + days - 1)), 'amount': amount});
   }
 
   rent('M-02', 'Unit 1A', 'month', -10, 30, 1500);
   rent('M-04', 'Unit 9B', 'day', -1, 4, 400);
   rent('M-08', 'Unit 2B', 'month', -20, 30, 1500);
-  r('request', 'Unit 7C', 'Unit 7C', {
-    'unit': 'Unit 7C',
-    'who': 'Bautista Family',
-    'when': '1 hour ago',
-    'at': now.millisecondsSinceEpoch - 3600000,
-    'slot': 'M-05',
-    'plan': 'month',
-    'days': 1,
-    'amount': 1500,
-    'confirmed': false,
-  });
-  final rp = tid();
-  r('proof', rp, 'Unit 7C', {
-    'id': rp,
-    'unit': 'Unit 7C',
-    'payer': 'Bautista Family',
-    'forText': 'Motor parking rental',
-    'method': 'GCash',
-    'reference': 'GC${year * 1000000 + 101403}',
-    'amount': 1500,
-    'date': _sd(now),
-    'status': 'Pending',
-    'slot': 'M-05',
-  });
+  rent('M-09', 'Unit 2A', 'month', -5, 30, 1500);
+  rent('M-11', 'Unit 3A', 'day', 0, 7, 700);
+  rent('M-13', 'Unit 4A', 'month', -26, 30, 1500);
+  rent('M-15', 'Unit 6C', 'month', -3, 30, 1500);
+  rent('M-16', 'Unit 8B', 'day', -2, 3, 300);
+  rent('M-18', 'Unit 10A', 'month', -15, 30, 1500);
+  for (var s = 1; s <= 20; s++) {
+    final id = 'M-${_two(s)}';
+    if (!rented.contains(id)) r('slot', id, '', {'id': id});
+  }
+  const reqs = <List<String>>[
+    ['Unit 7A', 'M-05'],
+    ['Unit 5C', 'M-06'],
+  ];
+  for (var k = 0; k < reqs.length; k++) {
+    final unit = reqs[k][0];
+    final name = byUnit[unit]!['name'];
+    r('request', unit, unit, {
+      'unit': unit,
+      'who': name,
+      'when': k == 1 ? '3 hours ago' : '1 hour ago',
+      'at': now.millisecondsSinceEpoch - (k == 1 ? 10800000 : 3600000),
+      'slot': reqs[k][1],
+      'plan': 'month',
+      'days': 1,
+      'amount': 1500,
+      'confirmed': false,
+    });
+    if (k == 0) {
+      final rp = tid();
+      r('proof', rp, unit, {
+        'id': rp,
+        'unit': unit,
+        'payer': name,
+        'forText': 'Motor parking rental',
+        'method': 'GCash',
+        'reference': 'GC${year * 1000000 + 101403}',
+        'amount': 1500,
+        'date': _sd(now),
+        'status': 'Pending',
+        'slot': reqs[k][1],
+      });
+    }
+  }
 
   // ---- documents (readable inside the app)
   void doc(String name, String cat, String aud, List<Map<String, dynamic>> blocks, int off) {
@@ -517,29 +629,57 @@ List<CRow> _demoRows() {
     {'k': 'bullet', 't': 'The budget was approved.'},
     {'k': 'bullet', 't': 'The lobby repainting will be put to a vote.'},
   ], -45);
+  doc('Parking policy', 'Policy', 'all', [
+    {'k': 'h1', 't': 'Motor parking policy (sample)'},
+    {'k': 'bullet', 't': 'Monthly rental is ₱1,500; daily rental is ₱100 per day.'},
+    {'k': 'bullet', 't': 'Display the sticker at all times.'},
+  ], -30);
+  doc('Amenity guidelines', 'Policy', 'all', [
+    {'k': 'h1', 't': 'Amenity guidelines (sample)'},
+    {'k': 'p', 't': "Bookings are in two-hour times and need the office's approval."},
+    {'k': 'bullet', 't': 'Pool: 6 AM to 8 PM.'},
+    {'k': 'bullet', 't': 'Function hall: 8 AM to 10 PM.'},
+  ], -75);
+  doc('Notice: elevator schedule', 'Notice', 'all', [
+    {'k': 'h1', 't': 'Elevator maintenance schedule (sample)'},
+    {'k': 'p', 't': 'Elevator B will be serviced every first Tuesday of the month.'},
+  ], -3);
   doc('Board notes (admin only)', 'Other', 'admin', [
     {'k': 'h1', 't': 'Board notes (sample)'},
     {'k': 'p', 't': 'Only the administrator can see this document.'},
   ], -5);
 
   // ---- activity log (administrator)
-  const acts = <List<Object>>[
-    ['Payment recorded, Unit 1A', 'Finance', 0.2],
-    ['Booking approved, Unit 1A', 'Facilities', 0.4],
-    ['Announcement published: Water interruption this Saturday', 'Announcements', 1.1],
-    ['Expense added: Security guards - monthly contract', 'Expenses', 2.2],
-    ['Grievance in progress: Leaking pipe in the 3rd floor hallway', 'Requests', 2.6],
-    ['Unit usage declaration received, Unit 8A', 'Units', 3.0],
-    ['Event added: Community clean-up drive', 'Events', 3.4],
-    ['Poll created: Should the lobby be repainted this year?', 'Polls', 4.1],
-    ['Charge posted to every occupied unit: October dues', 'Finance', 5.2],
-    ['Parking rented: M-02 to Unit 1A', 'Parking', 6.3],
-    ['Amenity updated: Gym', 'Facilities', 7.2],
-    ['Account created for Unit 9B', 'Access', 9.5],
+  const acts = <List<String>>[
+    ['Payment recorded, ', 'Finance'],
+    ['Booking approved, ', 'Facilities'],
+    ['Booking denied, ', 'Facilities'],
+    ['Account created for ', 'Access'],
+    ['Unit usage declaration received, ', 'Units'],
+    ['Grievance in progress: ', 'Requests'],
+    ['Parking rented to ', 'Parking'],
   ];
-  for (final a in acts) {
-    final at = now.millisecondsSinceEpoch - ((a[2] as double) * 86400000).round();
-    r('activity', at, '__admin', {'title': a[0], 'area': a[1], 'at': at});
+  const fixedActs = <List<String>>[
+    ['Announcement published: Water interruption this Saturday', 'Announcements'],
+    ['Expense added: Security guards - monthly contract', 'Expenses'],
+    ['Event added: Community clean-up drive', 'Events'],
+    ['Poll created: Should the lobby be repainted this year?', 'Polls'],
+    ['Charge posted to every occupied unit: October dues', 'Finance'],
+    ['Amenity updated: Gym', 'Facilities'],
+    ['Document uploaded: Parking policy', 'Documents'],
+    ['Settings updated: payment methods', 'Settings'],
+  ];
+  void act(String title, String area, double daysAgo) {
+    final at = now.millisecondsSinceEpoch - (daysAgo * 86400000).round() - _ri(0, 3600000);
+    r('activity', at, '__admin', {'title': title, 'area': area, 'at': at});
+  }
+
+  for (var a = 0; a < 40; a++) {
+    final t = _pick(acts);
+    act('${t[0]}${_pick(withAcc).label}', t[1], a * 0.35 + _rnd() * 0.3);
+  }
+  for (var k = 0; k < fixedActs.length; k++) {
+    act(fixedActs[k][0], fixedActs[k][1], 1 + k * 1.6);
   }
   return rows;
 }
