@@ -1,3 +1,5 @@
+// The live checklist of password rules.
+
 import 'package:flutter/material.dart';
 
 import '../core/password_rules.dart';

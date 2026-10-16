@@ -1,3 +1,5 @@
+// RESIDENT page: My reservations.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

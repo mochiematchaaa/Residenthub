@@ -1,3 +1,5 @@
+// ADMIN page: Announcements and events.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

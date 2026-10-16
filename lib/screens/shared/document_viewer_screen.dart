@@ -1,3 +1,5 @@
+// Shows a document: the tile in the list and the full viewer.
+
 import 'dart:math' as math;
 import 'dart:typed_data';
 

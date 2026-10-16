@@ -1,3 +1,5 @@
+// START OF THE APP. Sets up the providers, then shows the login screen or the right dashboard.
+
 import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 

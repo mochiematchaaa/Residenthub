@@ -1,3 +1,5 @@
+// ADMIN page: Activity log.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

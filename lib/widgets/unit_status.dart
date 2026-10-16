@@ -1,3 +1,5 @@
+// The usage options (owner, tenant, short-term, business...) and their look.
+
 import 'package:flutter/material.dart';
 
 import '../core/core.dart';

@@ -1,3 +1,5 @@
+// DEMO MODE ONLY (build with --dart-define=DEMO=true). Fills the app with made-up sample data and never talks to the database.
+
 import '../core/core.dart';
 
 /// Demo build: `flutter build web --dart-define=DEMO=true`.

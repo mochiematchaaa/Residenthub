@@ -1,3 +1,5 @@
+// RESIDENT page: Parking (pick and rent a slot).
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

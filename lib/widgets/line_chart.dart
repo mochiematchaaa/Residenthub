@@ -1,3 +1,5 @@
+// A smooth line chart (collection trend).
+
 import 'package:flutter/material.dart';
 
 import '../core/core.dart';

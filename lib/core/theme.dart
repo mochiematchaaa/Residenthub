@@ -1,3 +1,5 @@
+// Colors and the app theme (light and dark). Change colors here.
+
 import 'package:flutter/material.dart';
 
 // ---- brand palette (soft pastel, matches the reference UI) ----

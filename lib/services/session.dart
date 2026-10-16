@@ -1,3 +1,5 @@
+// Everything about the signed-in person: sign in/out, create accounts, verification codes, password reset. Talks to Supabase Auth and the Edge Functions.
+
 import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';

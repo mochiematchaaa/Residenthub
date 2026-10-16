@@ -1,3 +1,5 @@
+// The choice 'send the code by email or text message'.
+
 import 'package:flutter/material.dart';
 
 import '../core/core.dart';

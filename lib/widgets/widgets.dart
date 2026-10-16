@@ -1,3 +1,5 @@
+// Barrel file: one import for all shared widgets.
+
 export 'backdrop.dart';
 export 'channel_picker.dart';
 export 'common.dart';

@@ -1,3 +1,5 @@
+// RESIDENT page: Settings and profile.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

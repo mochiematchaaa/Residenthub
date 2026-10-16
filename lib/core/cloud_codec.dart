@@ -1,3 +1,5 @@
+// Converts AppState <-> database rows (see the long note below).
+
 part of 'app_state.dart';
 
 // Turns everything the app holds into rows of the shared `records` table (and back).

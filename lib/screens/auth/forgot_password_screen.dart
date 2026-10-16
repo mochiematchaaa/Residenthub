@@ -1,3 +1,5 @@
+// Forgot password: ask for the email, enter the code, set a new password.
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';

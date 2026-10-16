@@ -1,3 +1,5 @@
+// Opens the phone's messaging app with a text prepared for residents.
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 

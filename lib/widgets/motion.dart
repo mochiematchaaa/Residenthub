@@ -1,3 +1,5 @@
+// Small animations: press effect, counting numbers, fade-in tabs, pulsing dot, staggered lists.
+
 import 'package:flutter/material.dart';
 
 import '../core/core.dart';

@@ -1,3 +1,5 @@
+// ADMIN page: Finance (dues, payments, payment proofs).
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

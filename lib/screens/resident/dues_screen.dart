@@ -1,3 +1,5 @@
+// RESIDENT page: Dues and payments (ring, payment proof).
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

@@ -1,3 +1,5 @@
+// RESIDENT page: Polls and voting.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

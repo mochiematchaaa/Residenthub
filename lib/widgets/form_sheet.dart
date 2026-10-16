@@ -1,3 +1,5 @@
+// The popup form used for adding/editing things. Describe fields with FieldSpec, ChoiceSpec, ToggleSpec, TimeSpec.
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -5,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../core/core.dart';
 import 'common.dart';
 
+/// Describes a text input in a FormSheet.
 class FieldSpec {
   final String key, label;
   final String? hint;
@@ -17,6 +20,7 @@ class FieldSpec {
       {this.hint, this.lines = 1, this.type, this.obscure = false, this.onlyWhenKey, this.onlyWhenValue, this.initial = ''});
 }
 
+/// Describes a choice (dropdown/chips) in a FormSheet.
 class ChoiceSpec {
   final String key, label;
   final List<String> options;
@@ -24,6 +28,7 @@ class ChoiceSpec {
   const ChoiceSpec(this.key, this.label, this.options, this.initial);
 }
 
+/// Describes an on/off switch in a FormSheet.
 class ToggleSpec {
   final String key, label;
   final bool initial;

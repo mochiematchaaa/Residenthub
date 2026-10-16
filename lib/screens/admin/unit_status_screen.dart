@@ -1,3 +1,5 @@
+// ADMIN page: Unit usage (owner, rental, business) and approvals.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

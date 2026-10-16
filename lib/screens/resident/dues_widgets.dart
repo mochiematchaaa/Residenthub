@@ -1,3 +1,5 @@
+// Small pieces of the Dues page: due state, countdown, ring painter and confetti.
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';

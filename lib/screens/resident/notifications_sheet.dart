@@ -1,3 +1,5 @@
+// The notification list (bell) for residents.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
