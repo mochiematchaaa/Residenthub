@@ -497,6 +497,37 @@ class AppState extends ChangeNotifier {
         (b.status == 'Pending' || b.status == 'Approved'));
   }
 
+  /// One time of one amenity on one day (yyyy-mm-dd): past | closed | booked | pending | open.
+  String slotState(int f, int i, String day) {
+    if (f >= amenities.length) return 'closed';
+    final now = DateTime.now();
+    final today = dayKey(now);
+    if (day.compareTo(today) < 0) return 'past';
+    final a = amenities[f];
+    final start = (toMinutes(a.open) ?? 0) + i * a.mins;
+    if (day == today && start <= now.hour * 60 + now.minute) return 'past';
+    if (day == blockedDay && (blocked[_slotKey(f, i)] ?? false)) return 'closed';
+    for (final b in bookings) {
+      if (b.day == day && b.slot == i && b.place == a.name && (b.status == 'Pending' || b.status == 'Approved')) {
+        return b.status == 'Approved' ? 'booked' : 'pending';
+      }
+    }
+    return 'open';
+  }
+
+  /// How many times of an amenity are in each state on a day.
+  Map<String, int> dayCounts(int f, String day) {
+    final c = {'open': 0, 'booked': 0, 'pending': 0, 'closed': 0, 'past': 0, 'total': 0};
+    if (f >= amenities.length) return c;
+    final n = amenities[f].slots.length;
+    for (var i = 0; i < n; i++) {
+      final s = slotState(f, i, day);
+      c[s] = (c[s] ?? 0) + 1;
+      c['total'] = (c['total'] ?? 0) + 1;
+    }
+    return c;
+  }
+
   /// Adds an amenity, or changes [edit]. Returns a message when something is wrong.
   String? saveAmenity(Amenity? edit, String name, String open, String close, int mins, String note) {
     name = name.trim();
@@ -527,7 +558,7 @@ class AppState extends ChangeNotifier {
   int activeBookingsToday(Amenity a) {
     final today = dayKey(DateTime.now());
     return bookings
-        .where((b) => b.place == a.name && b.day == today && (b.status == 'Pending' || b.status == 'Approved'))
+        .where((b) => b.place == a.name && b.day.compareTo(today) >= 0 && (b.status == 'Pending' || b.status == 'Approved'))
         .length;
   }
 
@@ -935,14 +966,15 @@ class AppState extends ChangeNotifier {
     return l.isEmpty ? null : l.first;
   }
 
-  void submitBooking(int f, int slot) {
-    final now = DateTime.now();
+  /// Resident: asks for one time of an amenity on [day] (yyyy-mm-dd, today when empty).
+  void submitBooking(int f, int slot, {String day = ''}) {
+    final date = DateTime.tryParse(day) ?? DateTime.now();
     bookings.insert(
         0,
         Booking(nextId(), myHousehold, myUnit, amenities[f].name,
-            '${shortDate(now)}, ${amenities[f].slots[slot]}', 'Pending',
-            day: dayKey(now), slot: slot));
-    logActivity('Booking request for the ${amenities[f].name}, $myUnit', 'Facilities');
+            '${shortDate(date)}, ${amenities[f].slots[slot]}', 'Pending',
+            day: dayKey(date), slot: slot));
+    logActivity('Booking request for the ${amenities[f].name} on ${shortDate(date)}, $myUnit', 'Facilities');
     _n();
   }
 
