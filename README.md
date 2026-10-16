@@ -4,6 +4,14 @@ Flutter app (web and Android) for **City Residences Condominium Corporation**. I
 system: it starts empty, the administrator enters all details and creates every resident account,
 and everything is stored in a Supabase database shared by all devices.
 
+## Demo (sample data, no database)
+
+`flutter build web --dart-define=DEMO=true` builds a **demo** of the app: it never connects to Supabase and starts with made-up
+people, units, dues, bookings and announcements (`lib/services/demo.dart`, dates built around today). The sign-in screen shows
+"Try as Administrator" and "Try as Resident"; anything changed stays in memory and is gone when the page closes. Password,
+account and text-message features are switched off. The GitHub Action publishes the demo next to the real app at
+`/Residenthub/demo/` (the website's `demo/` folder links to it).
+
 ## Open in Android Studio
 1. Create a project: *File > New > New Flutter Project*, name it `residenthub_dashboard`
    (org e.g. `ph.residenthub`). Or, in this folder, run:

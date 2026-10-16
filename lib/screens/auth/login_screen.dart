@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
+import '../../services/demo.dart';
 import '../../services/links.dart';
 import '../../services/session.dart';
 import '../../widgets/widgets.dart';
@@ -167,15 +168,51 @@ class _LoginScreenState extends State<LoginScreen> {
                             height: 54,
                             child: FilledButton(onPressed: _busy ? null : _submit, child: Text(_busy ? 'Signing in…' : 'Continue')),
                           ),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(onPressed: _forgot, child: const Text('Forgot password?')),
-                          ),
+                          if (!kDemo)
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(onPressed: _forgot, child: const Text('Forgot password?')),
+                            ),
                         ],
                       ),
                     ),
                   ),
                   const SizedBox(height: 18),
+                  if (kDemo) ...[
+                    Reveal(
+                      index: 2,
+                      child: PastelCard(
+                        color: Pastel.lavender,
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Demo mode', style: hd(18, color: ink)),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Everything here is made-up sample data. Nothing is saved to a database, and it resets when you close the page.',
+                              style: TextStyle(color: inkSoft, fontSize: 12.5, height: 1.4),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 48,
+                              child: FilledButton(onPressed: () => startDemo(Role.admin), child: const Text('Try as Administrator')),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 48,
+                              child: OutlinedButton(
+                                onPressed: () => startDemo(Role.resident),
+                                child: const Text('Try as Resident (Maria, Unit 3B)'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ] else
                   Reveal(
                     index: 2,
                     child: PastelCard(
