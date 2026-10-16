@@ -1,3 +1,5 @@
+// Screen where a new resident must choose their own password.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

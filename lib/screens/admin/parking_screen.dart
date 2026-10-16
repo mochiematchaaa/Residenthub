@@ -1,3 +1,5 @@
+// ADMIN page: Parking (slots, requests, rentals).
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

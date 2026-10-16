@@ -1,3 +1,5 @@
+// Reads and writes Word (.docx) files for the Documents pages.
+
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';

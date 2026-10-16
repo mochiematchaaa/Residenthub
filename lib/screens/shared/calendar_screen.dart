@@ -1,3 +1,5 @@
+// Calendar page used by both admin and resident (events, bookings, due dates).
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
@@ -6,6 +8,7 @@ import '../../widgets/widgets.dart';
 /// Shared by the resident and admin apps (`admin: true` shows every booking).
 enum EntryKind { event, booking, due }
 
+/// One thing shown on the calendar.
 class CalEntry {
   final EntryKind kind;
   final String title;

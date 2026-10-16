@@ -1,3 +1,5 @@
+// ADMIN page: Finance documents (collection report, statement of account).
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

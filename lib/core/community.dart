@@ -2,12 +2,14 @@
 /// polls, motor parking slots and the resident directory.
 /// Pure data. It does not import the app state, so app_state.dart can use it.
 
+/// One choice in a poll.
 class PollOption {
   final String text;
   int votes;
   PollOption(this.text, this.votes);
 }
 
+/// A poll residents vote on (one vote per unit).
 class Poll {
   final int id;
   String question;
@@ -65,6 +67,7 @@ List<String> slotNames(int n) => [for (var i = 1; i <= n; i++) 'M-${i.toString()
 
 // ---------------------------------------------------------------- directory
 
+/// An emergency contact shown in the directory.
 class ContactInfo {
   final String name, note, tel;
   const ContactInfo(this.name, this.note, this.tel);

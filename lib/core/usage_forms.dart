@@ -3,6 +3,7 @@
 
 enum UsageFieldType { text, phone, number, date, select, multiline }
 
+/// One input of a unit-usage form.
 class UsageField {
   final String key, label;
   final bool required;
@@ -13,6 +14,7 @@ class UsageField {
       {this.required = false, this.type = UsageFieldType.text, this.hint = '', this.options = const []});
 }
 
+/// The fields a resident fills for a usage (tenant, short-term, business...).
 class UsageForm {
   final String title, agree;
   final List<UsageField> fields;

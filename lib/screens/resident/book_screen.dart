@@ -1,3 +1,5 @@
+// RESIDENT page: Book a facility (day, time slot).
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

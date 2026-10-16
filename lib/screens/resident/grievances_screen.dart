@@ -1,3 +1,5 @@
+// RESIDENT page: Grievances (send and follow progress).
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

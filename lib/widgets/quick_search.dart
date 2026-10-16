@@ -1,3 +1,5 @@
+// The quick search box that jumps to pages and records.
+
 import 'package:flutter/material.dart';
 
 import 'common.dart';

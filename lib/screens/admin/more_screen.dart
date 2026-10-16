@@ -1,3 +1,5 @@
+// ADMIN page: the 'More' menu.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

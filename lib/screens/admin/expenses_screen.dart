@@ -1,3 +1,5 @@
+// ADMIN page: Expenses.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

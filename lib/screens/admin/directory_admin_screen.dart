@@ -1,3 +1,5 @@
+// ADMIN page: Emergency contacts and house rules.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

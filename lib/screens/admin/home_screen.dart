@@ -1,3 +1,5 @@
+// ADMIN page: Home overview.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

@@ -1,3 +1,6 @@
+// THE BRAIN OF THE APP. AppState holds all data (units, dues, bookings, polls...) and every action that changes it.
+// The global `app` is this object. Screens redraw with ListenableBuilder(listenable: app, ...) and change data by calling its methods. Saving to the database is done by cloud_sync.dart.
+
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -12,6 +15,7 @@ import 'usage_forms.dart';
 
 part 'cloud_codec.dart';
 
+/// Who is signed in: a resident or the administrator.
 enum Role { resident, admin }
 
 String peso(num n) {
@@ -47,6 +51,7 @@ String usageLabel(String u) =>
 String dayKey(DateTime d) =>
     '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+/// One condominium unit with its household, contact, status and how it is used.
 class Unit {
   String unit, name, type, status, contact;
   String usage; // current unit state: owner | tenant | shortterm | business | vacant | away | renovation
@@ -82,6 +87,7 @@ class ActivityEntry {
   const ActivityEntry(this.title, this.area, this.at);
 }
 
+/// A facility booking (place, day, time, status Pending/Approved/Denied).
 class Booking {
   final int id;
   final String who, unit, place, when;
@@ -116,12 +122,14 @@ class Due {
   }
 }
 
+/// One month in the dues list: month, amount, due date and status.
 class MonthDue {
   final String month, due, status;
   final num amt;
   MonthDue(this.month, this.amt, this.due, this.status);
 }
 
+/// A complaint or request sent by a resident. stage 0 = new, 1 = in progress, 2 = resolved.
 class Grievance {
   final int id;
   final String title, body, by; // by = unit label
@@ -130,6 +138,7 @@ class Grievance {
   String get statusLabel => const ['Open', 'In progress', 'Resolved'][stage];
 }
 
+/// A notice from the admin to all residents.
 class Announcement {
   final int id;
   String title, body, date, status, type;
@@ -138,6 +147,7 @@ class Announcement {
       this.type, this.sms);
 }
 
+/// A community event residents can join (RSVP).
 class EventItem {
   final int id;
   final String title, date, place, about;
@@ -156,6 +166,7 @@ class Account {
       {this.suspended = false, this.verified = false});
 }
 
+/// The signed-in person's profile.
 class ResidentUser {
   String name, unit, email, phone;
   Uint8List? photo;
@@ -163,6 +174,7 @@ class ResidentUser {
   String get unitLabel => unit.split(' · ').first;
 }
 
+/// A device/session shown in the settings.
 class SessionInfo {
   final int id;
   final String device, location, when;
@@ -170,6 +182,7 @@ class SessionInfo {
   SessionInfo(this.id, this.device, this.location, this.when, this.current);
 }
 
+/// A resident's request for a parking slot.
 class ParkingReq {
   final String unit, name;
   bool confirmed;
@@ -195,6 +208,7 @@ class ParkingReq {
 
 final AppState app = AppState();
 
+/// All app data and actions (see the note at the top of this file).
 class AppState extends ChangeNotifier {
   Role? role;
   bool dark = false;
@@ -227,23 +241,28 @@ class AppState extends ChangeNotifier {
     return t;
   }
 
+  /// A new unique id for a record.
   int cloudId() => nextId();
 
+  /// Tells every screen that the data changed so they redraw.
   void _n() => notifyListeners();
 
   /// Called by the sync after it has changed the data.
   void changed() => _n();
 
+  /// Switches dark mode.
   void toggleDark() {
     dark = !dark;
     _n();
   }
 
+  /// Changes the tab of the resident dashboard.
   void setResTab(int i) {
     resTab = i;
     _n();
   }
 
+  /// Changes the tab of the admin dashboard.
   void setAdminTab(int i) {
     adminTab = i;
     _n();
@@ -259,11 +278,13 @@ class AppState extends ChangeNotifier {
     return parts.isEmpty ? 'Admin' : parts.first;
   }
 
+  /// Saves the admin's profile photo.
   void setAdminPhoto(Uint8List? bytes) {
     adminPhoto = bytes;
     _n();
   }
 
+  /// Saves the resident's profile photo.
   void setMyPhoto(Uint8List? bytes) {
     final u = me;
     if (u == null) return;
@@ -274,6 +295,7 @@ class AppState extends ChangeNotifier {
   /// Accounts shown in Manage access (loaded from the database for the administrator).
   final List<Account> trusted = [];
 
+  /// Replaces the list of accounts loaded from the database.
   void setAccounts(List<Account> list) {
     trusted
       ..clear()
@@ -287,12 +309,14 @@ class AppState extends ChangeNotifier {
           if (a.role == 'Resident' && validMobile(normalizePhone(a.phone))) normalizePhone(a.phone),
       ];
 
+  /// Turns a typed mobile number into the 09XXXXXXXXX form.
   static String normalizePhone(String raw) {
     var d = raw.replaceAll(RegExp(r'\D'), '');
     if (d.startsWith('63') && d.length == 12) d = '0${d.substring(2)}';
     return d;
   }
 
+  /// True if the number is a valid Philippine mobile number.
   static bool validMobile(String normalized) => RegExp(r'^09\d{9}$').hasMatch(normalized);
 
   // ---------------------------------------------------------------- session
@@ -345,21 +369,25 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Called when loading is done, so the loading screen goes away.
   void finishBoot() {
     booting = false;
     _n();
   }
 
+  /// Called after the resident chose a new password.
   void passwordChanged() {
     mustChangePassword = false;
     _n();
   }
 
+  /// Called after the email/mobile codes were confirmed.
   void contactVerifiedNow() {
     contactVerified = true;
     _n();
   }
 
+  /// Saves the resident's name and phone.
   void setMyProfile(String name, String phone) {
     final u = me;
     if (u != null) {
@@ -385,6 +413,7 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Empties all data (used when signing out).
   void clearData() {
     loaded = false;
     units.clear();
@@ -466,7 +495,9 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Number of unpaid dues of a unit.
   int unpaidCountFor(String unit) => dues.where((d) => d.unit == unit && !d.paid).length;
+  /// Total unpaid amount of a unit.
   num balanceFor(String unit) =>
       dues.where((d) => d.unit == unit && !d.paid).fold<num>(0, (s, d) => s + d.amt);
 
@@ -482,9 +513,11 @@ class AppState extends ChangeNotifier {
 
   String _slotKey(int f, int i) => '${f < amenities.length ? amenities[f].id : f}-$i';
 
+  /// True if the admin blocked this time slot.
   bool slotClosed(int f, int i) =>
       blockedDay == dayKey(DateTime.now()) && (blocked[_slotKey(f, i)] ?? false);
 
+  /// True if the time slot is blocked or already booked.
   bool slotBooked(int f, int i) {
     if (f >= amenities.length) return false;
     final today = dayKey(DateTime.now());
@@ -562,6 +595,7 @@ class AppState extends ChangeNotifier {
         .length;
   }
 
+  /// Removes a facility (returns an error text if it can't).
   String? removeAmenity(Amenity a) {
     if (amenities.length <= 1) return 'Keep at least one amenity so residents can still book.';
     amenities.remove(a);
@@ -603,11 +637,15 @@ class AppState extends ChangeNotifier {
   final List<PaymentRecord> payments = [];
   final List<PaymentProof> proofs = [];
 
+  /// My unit's payments.
   List<PaymentRecord> get myPayments =>
       payments.where((p) => p.unit == myUnit).toList();
+  /// The payment proofs my unit sent.
   List<PaymentProof> get myProofs =>
       proofs.where((p) => p.unit == myUnit && !p.direct).toList();
+  /// How many payment proofs wait for the admin.
   int get pendingProofs => proofs.where((p) => p.status == 'Pending').length;
+  /// The payment methods currently allowed.
   List<PayMethod> get enabledPayMethods =>
       payMethods.where((m) => m.enabled).toList();
 
@@ -621,6 +659,7 @@ class AppState extends ChangeNotifier {
     return collectedIn(n.year, n.month);
   }
 
+  /// Total of all payments received.
   num get totalCollected => payments.fold<num>(0, (s, p) => s + p.amount);
 
   /// The last [n] months (oldest first) ending with the current month.
@@ -629,9 +668,11 @@ class AppState extends ChangeNotifier {
     return [for (var i = n - 1; i >= 0; i--) DateTime(now.year, now.month - i, 1)];
   }
 
+  /// Amounts collected per month for the chart.
   List<double> collectionTrend([int n = 6]) =>
       [for (final m in trendMonths(n)) collectedIn(m.year, m.month).toDouble()];
 
+  /// Month names for the chart.
   List<String> collectionTrendLabels([int n = 6]) =>
       [for (final m in trendMonths(n)) _months[m.month - 1].substring(0, 3)];
 
@@ -756,6 +797,7 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Deletes an expense.
   void removeExpense(Expense e) {
     expenses.remove(e);
     _n();
@@ -770,6 +812,7 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Total spent in a given month.
   num spentIn(int year, int month) => expenses
       .where((e) => e.date.year == year && e.date.month == month)
       .fold<num>(0, (s, e) => s + e.amount);
@@ -780,6 +823,7 @@ class AppState extends ChangeNotifier {
     return spentIn(n.year, n.month);
   }
 
+  /// Date -> 'October 2026'.
   String monthLabel(DateTime d) => '${_months[d.month - 1]} ${d.year}';
 
   /// Admin: the proof checks out - record the payment and issue a receipt.
@@ -816,6 +860,7 @@ class AppState extends ChangeNotifier {
     return rec;
   }
 
+  /// Rejects a payment proof.
   void rejectProof(PaymentProof p) {
     if (p.status != 'Pending') return;
     p.status = 'Rejected';
@@ -823,6 +868,7 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Saves the details and on/off of a payment method.
   void updatePayMethod(PayMethod m, String details, bool enabled) {
     if (details.trim().isNotEmpty) m.details = details.trim();
     m.enabled = enabled;
@@ -855,6 +901,7 @@ class AppState extends ChangeNotifier {
   /// What happened in the app, newest first (shown as "Recent activity").
   final List<ActivityEntry> activityLog = [];
 
+  /// Adds a line to the activity log.
   void logActivity(String title, String area) {
     activityLog.insert(0, ActivityEntry(title, area, DateTime.now()));
     if (activityLog.length > 200) activityLog.removeRange(200, activityLog.length);
@@ -929,17 +976,22 @@ class AppState extends ChangeNotifier {
 
   // ---------------------------------------------------------------- resident
 
+  /// The signed-in resident's unit name.
   String get myUnit => me?.unitLabel ?? '';
   Unit? get myUnitRec {
     final l = units.where((u) => u.unit == myUnit).toList();
     return l.isEmpty ? null : l.first;
   }
 
+  /// The household name of my unit.
   String get myHousehold => myUnitRec?.name ?? me?.name ?? '';
+  /// My unit's bookings.
   List<Booking> get myBookings =>
       bookings.where((b) => b.unit == myUnit).toList();
+  /// The grievances my unit sent.
   List<Grievance> get myGrievances =>
       grievances.where((g) => g.by == myUnit).toList();
+  /// True if my unit already asked for parking.
   bool get parkingRequested => parking.any((p) => p.unit == myUnit);
 
   /// Every charge billed to the signed-in resident's unit, open ones first.
@@ -956,6 +1008,7 @@ class AppState extends ChangeNotifier {
     ];
   }
 
+  /// My unit's total unpaid amount.
   num get myBalance =>
       myDueRows.where((d) => d.status != 'Paid').fold<num>(0, (s, d) => s + d.amt);
 
@@ -978,6 +1031,7 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Sends a new grievance.
   void addGrievance(String title, String body) {
     grievances.insert(0,
         Grievance(nextId(), title, body.isEmpty ? 'No further details.' : body, myUnit, 0));
@@ -985,12 +1039,14 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Sends a parking request.
   void requestParking() {
     if (!parkingRequested) parking.add(ParkingReq(myUnit, myHousehold));
     logActivity('Motor parking requested, $myUnit', 'Parking');
     _n();
   }
 
+  /// Usage changes my unit declared.
   List<StatusUpdate> get myStatusUpdates =>
       statusUpdates.where((u) => u.unit == myUnit).toList();
 
@@ -1030,12 +1086,14 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Marks the usage decision as seen by the resident.
   void markStatusSeen() {
     if (newStatusUpdates == 0) return;
     newStatusUpdates = 0;
     _n();
   }
 
+  /// Applies a usage declaration to the unit and records it.
   void _applyStatus(Unit u, String key, String note, String by, {Map<String, String>? info}) {
     final date = shortDate(DateTime.now());
     // The details only belong to the way the unit was declared as. Another way starts empty.
@@ -1054,11 +1112,16 @@ class AppState extends ChangeNotifier {
 
   // ---------------------------------------------------------------- admin
 
+  /// How many dues are unpaid (all units).
   int get unpaidCount => dues.where((d) => !d.paid).length;
+  /// How many grievances are not yet resolved.
   int get openGrievances => grievances.where((g) => g.stage < 2).length;
+  /// How many bookings wait for a decision.
   int get pendingBookings => bookings.where((b) => b.status == 'Pending').length;
+  /// How many parking requests wait for the admin.
   int get pendingParking => parking.where((p) => !p.confirmed).length;
 
+  /// Blocks or opens a time slot of a facility.
   void toggleSlot(int f, int i) {
     final today = dayKey(DateTime.now());
     if (blockedDay != today) {
@@ -1070,6 +1133,7 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Approves or denies a booking.
   void bookAct(int id, String status) {
     final b = bookings.firstWhere((b) => b.id == id);
     b.status = status;
@@ -1139,6 +1203,7 @@ class AppState extends ChangeNotifier {
     return rec;
   }
 
+  /// Saves the monthly parking rate (returns an error text if invalid).
   String? setRate(String raw) {
     final n = double.tryParse(raw.trim());
     if (n == null || n < 0) return 'Enter a valid amount before updating the rate.';
@@ -1147,6 +1212,7 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Saves the daily parking rate (returns an error text if invalid).
   String? setDailyRate(String raw) {
     final n = double.tryParse(raw.trim());
     if (n == null || n < 0) return 'Enter a valid amount before updating the rate.';
@@ -1186,8 +1252,10 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Confirms a parking request and assigns the slot.
   void confirmParking(ParkingReq p) => assignRequest(p);
 
+  /// Declines a parking request.
   void declineParking(ParkingReq p) {
     parking.remove(p);
     logActivity('Parking request declined, ${p.unit}', 'Parking');
@@ -1261,6 +1329,7 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// How many parking slots are rented.
   int get slotsUsed => slots.where((s) => s.used).length;
 
   /// The slot a unit has been given, or null.
@@ -1332,6 +1401,7 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Assigns a parking slot to a unit for a plan (monthly or daily).
   void assignSlot(ParkingSlot s, String unit, {String plan = 'month', int days = 1}) {
     final d = plan == 'day' ? (days < 1 ? 1 : days) : 0;
     _stamp(s, unit, plan, d, parkAmount(plan, d));
@@ -1360,10 +1430,14 @@ class AppState extends ChangeNotifier {
   final List<Poll> polls = [];
   final Map<String, int> _votes = {}; // '<unit>|<pollId>' -> option index
 
+  /// The option my unit voted for in a poll, or null.
   int? myVote(int pollId) => _votes['$myUnit|$pollId'];
+  /// How many open polls my unit has not voted in.
   int get pollsToVote => polls.where((p) => p.open && myVote(p.id) == null).length;
+  /// How many polls are open.
   int get openPolls => polls.where((p) => p.open).length;
 
+  /// Saves my unit's vote (returns an error text if not allowed).
   String? castVote(Poll p, int option) {
     if (!p.open) return 'This poll is closed.';
     if (myVote(p.id) != null) return 'Your unit has already voted in this poll.';
@@ -1375,6 +1449,7 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Creates a poll (returns an error text if invalid).
   String? addPoll(String question, String optionsRaw) {
     final opts = optionsRaw.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
     if (question.trim().isEmpty || opts.length < 2) return 'Add a question and at least two options (one per line).';
@@ -1385,12 +1460,14 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Opens or closes a poll.
   void togglePoll(Poll p) {
     p.open = !p.open;
     logActivity('Poll ${p.open ? 'reopened' : 'closed'}: ${p.question}', 'Polls');
     _n();
   }
 
+  /// Deletes a poll.
   void deletePoll(Poll p) {
     polls.remove(p);
     _votes.removeWhere((k, _) => k.endsWith('|${p.id}'));
@@ -1407,8 +1484,10 @@ class AppState extends ChangeNotifier {
           if (k.startsWith('$myUnit|')) int.tryParse(k.substring(myUnit.length + 1)) ?? -1,
       };
 
+  /// How many units are going to an event.
   int goingCount(EventItem e) => _rsvps.where((k) => k.endsWith('|${e.id}')).length;
 
+  /// Marks my unit as going or not going.
   void toggleRsvp(EventItem e) {
     final k = '$myUnit|${e.id}';
     if (!_rsvps.remove(k)) _rsvps.add(k);
@@ -1419,6 +1498,7 @@ class AppState extends ChangeNotifier {
   // ---- unit rentals (the administrator reviews short-term rentals and home businesses) ----
   int get rentalsToReview => units.where((u) => u.needsApproval && u.usageStatus == 'pending').length;
 
+  /// Admin approves or rejects a unit's usage declaration.
   void reviewUsage(Unit u, bool approve, String note) {
     u.usageStatus = approve ? 'approved' : 'rejected';
     u.usageRemark = approve ? '' : (note.trim().isEmpty ? 'Not approved at this time. Please contact the office.' : note.trim());
@@ -1426,6 +1506,7 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Moves a grievance to its next stage.
   void advanceGrievance(int id) {
     final g = grievances.firstWhere((g) => g.id == id);
     if (g.stage < 2) g.stage++;
@@ -1433,6 +1514,7 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Publishes an announcement.
   void publishAnn(int id) {
     final a = announcements.firstWhere((a) => a.id == id);
     a.status = 'Published';
@@ -1440,6 +1522,7 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Creates an announcement (and can text the residents).
   void addAnnouncement(String title, String body, String type, bool sms) {
     announcements.insert(
         0,
@@ -1449,6 +1532,7 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Edits an announcement.
   void editAnnouncement(int id, String title, String body) {
     final a = announcements.firstWhere((a) => a.id == id);
     if (title.trim().isNotEmpty) a.title = title.trim();
@@ -1456,11 +1540,13 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Deletes an announcement.
   void deleteAnnouncement(int id) {
     announcements.removeWhere((a) => a.id == id);
     _n();
   }
 
+  /// Creates an event.
   void addEvent(String title, String date, String place) {
     events.insert(
         0,
@@ -1469,6 +1555,7 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// Deletes an event.
   void deleteEvent(int id) {
     events.removeWhere((e) => e.id == id);
     _rsvps.removeWhere((k) => k.endsWith('|$id'));
@@ -1488,6 +1575,7 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Deletes a document.
   void removeDoc(DocItem d) {
     docs.remove(d);
     _n();

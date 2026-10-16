@@ -1,3 +1,5 @@
+// ADMIN page: Manage access (create, reset, suspend and delete resident accounts).
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

@@ -1,3 +1,5 @@
+// ADMIN page: Facility (booking requests and time slots).
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

@@ -1,3 +1,5 @@
+// RESIDENT page: Documents.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

@@ -1,3 +1,5 @@
+// RESIDENT page: Who to call and house rules.
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 

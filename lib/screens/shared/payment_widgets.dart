@@ -1,3 +1,5 @@
+// Receipt list and the export buttons, used by both admin and resident.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

@@ -1,3 +1,5 @@
+// Barrel file: one import for all the data models and AppState.
+
 export 'amenity.dart';
 export 'app_state.dart';
 export 'community.dart';

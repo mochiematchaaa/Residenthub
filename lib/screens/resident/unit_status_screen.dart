@@ -1,3 +1,5 @@
+// RESIDENT page: Unit status (how the unit is used) and the declaration form.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

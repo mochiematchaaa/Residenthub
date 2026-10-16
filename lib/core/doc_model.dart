@@ -1,9 +1,12 @@
+// Model of a document (title + blocks of text/tables) shown in the Documents pages.
+
 import 'dart:typed_data';
 
 /// One piece of a document's body. Documents are stored as a list of blocks so
 /// the same content can be shown in the app and exported to Word or Excel.
 enum BlockKind { h1, h2, p, bullet, table }
 
+/// One block (heading, paragraph, table) of a document.
 class DocBlock {
   final BlockKind kind;
   final String text;
@@ -37,6 +40,7 @@ const docCategories = ['Policy', 'Finance', 'Form', 'Notice', 'Minutes', 'Other'
 /// categories of the general Community documents.
 const communityCategories = ['Policy', 'Form', 'Notice', 'Minutes', 'Other'];
 
+/// A document with a title and its blocks.
 class DocItem {
   /// Set when the document is saved to the shared database (empty for the live reports).
   final String id;

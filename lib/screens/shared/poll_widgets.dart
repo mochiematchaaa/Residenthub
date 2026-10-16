@@ -1,3 +1,5 @@
+// The poll card with result bars, used by both admin and resident.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

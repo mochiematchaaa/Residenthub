@@ -1,3 +1,5 @@
+// The soft building picture behind the login screen.
+
 import 'package:flutter/material.dart';
 
 /// The City Residences building photo, softly faded behind a screen.

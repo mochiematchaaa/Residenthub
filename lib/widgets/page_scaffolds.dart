@@ -1,3 +1,5 @@
+// The page frames: header, tab page and sub page.
+
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -31,6 +33,7 @@ class AppHeader extends StatelessWidget {
 /// Bottom padding that keeps content clear of the floating nav bar.
 const double kNavClearance = 118;
 
+/// Frame of a main tab page.
 class TabPage extends StatelessWidget {
   final String? title;
   final String? subtitle;

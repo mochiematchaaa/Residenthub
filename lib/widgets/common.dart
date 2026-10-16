@@ -1,3 +1,5 @@
+// Basic building blocks used everywhere: cards, pills, chips, section headers, empty boxes, avatars.
+
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -5,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../core/core.dart';
 import 'motion.dart';
 
+/// Color meaning of a pill/chip: good (green), warn (yellow), bad (red), info (blue).
 enum Tone { good, warn, bad, info }
 
 ({Color bg, Color fg}) toneOf(BuildContext c, Tone t) {
@@ -93,6 +96,7 @@ Future<bool> confirmDialog(BuildContext c, String title, String body,
 
 // ------------------------------------------------------------------ basics
 
+/// The standard card.
 class RCard extends StatelessWidget {
   final Widget child;
   final EdgeInsets padding;
@@ -136,6 +140,7 @@ class RCard extends StatelessWidget {
   }
 }
 
+/// A small colored label such as 'Paid' or 'Pending'.
 class Pill extends StatelessWidget {
   final String text;
   final Tone? tone;
@@ -179,6 +184,7 @@ class IconBadge extends StatelessWidget {
   }
 }
 
+/// A section title with an optional action button.
 class SectionHeader extends StatelessWidget {
   final String title;
   final String? action;
@@ -275,6 +281,7 @@ class Reveal extends StatelessWidget {
   }
 }
 
+/// The message shown when a list is empty.
 class EmptyBox extends StatelessWidget {
   final IconData icon;
   final String text;
@@ -409,6 +416,7 @@ class StatTile extends StatelessWidget {
   }
 }
 
+/// A round picture or initials of a person.
 class Avatar extends StatelessWidget {
   final String text;
   final double size;

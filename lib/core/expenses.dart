@@ -1,3 +1,5 @@
+// Expense model (what the corporation spent) and its categories.
+
 import 'app_state.dart' show peso, shortDate, longDate;
 import 'doc_model.dart';
 

@@ -1,3 +1,5 @@
+// The pastel-styled widgets: circle buttons, cards, glass icons, feature tiles, stat rows.
+
 import 'package:flutter/material.dart';
 
 import '../core/core.dart';

@@ -1,3 +1,5 @@
+// The floating bottom navigation bar.
+
 import 'package:flutter/material.dart';
 
 import '../core/core.dart';

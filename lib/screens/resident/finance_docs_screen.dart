@@ -1,3 +1,5 @@
+// RESIDENT page: Finance documents.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

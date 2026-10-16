@@ -1,3 +1,5 @@
+// Builds the live documents (collection report, statement of account) from the current data.
+
 import 'app_state.dart';
 import 'doc_model.dart';
 import 'expenses.dart';

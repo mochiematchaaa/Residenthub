@@ -1,3 +1,5 @@
+// ADMIN page: Polls.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

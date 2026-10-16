@@ -1,3 +1,5 @@
+// ADMIN page: Settings (rates, payment methods, password).
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

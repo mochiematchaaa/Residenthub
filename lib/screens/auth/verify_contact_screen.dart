@@ -1,3 +1,5 @@
+// Screen where a resident confirms email and mobile with codes.
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';

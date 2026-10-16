@@ -1,3 +1,5 @@
+// Shortcuts used by the admin screens: jump to a page, the 'needs attention' sheet, and quick search items.
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';

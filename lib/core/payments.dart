@@ -1,3 +1,5 @@
+// Payment models: payment methods, payment records (receipts) and payment proofs sent by residents.
+
 import 'app_state.dart' show peso;
 import 'doc_model.dart';
 
@@ -33,6 +35,7 @@ class PaymentRecord {
 /// What a motor parking payment is for. Same text as the website.
 const parkingPayFor = 'Motor parking rental';
 
+/// A payment proof sent by a resident, waiting for the admin to confirm.
 class PaymentProof {
   final int id;
   final String unit, payer, method, reference, date;

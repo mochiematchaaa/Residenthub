@@ -1,3 +1,5 @@
+// Keeps AppState and the Supabase database in step: loads rows, saves changes, listens for live updates.
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -31,6 +33,7 @@ const _kinds = [
   'due', 'payment', 'expense', 'announcement', 'event', 'poll', 'doc', 'slot', 'setting',
 ];
 
+/// Loads and saves data to Supabase and listens for live changes.
 class CloudSync extends ChangeNotifier {
   static const _table = 'records';
 

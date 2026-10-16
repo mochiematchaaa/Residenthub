@@ -1,3 +1,5 @@
+// The sign-in screen (and the Demo mode card when built as a demo).
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
