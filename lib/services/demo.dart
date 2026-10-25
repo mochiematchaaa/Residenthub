@@ -13,19 +13,33 @@ const String kDemoPassword = 'Demo@1234';
 const String kDemoAdminEmail = 'admin@demo.test';
 const String kDemoResidentEmail = 'resident@demo.test';
 const String kDemoResidentUnit = 'Unit 3B';
+const String kDemoAdminPhone = '0917 000 0000';
+const String kDemoResidentPhone = '0917 000 1108';
+
+/// A mobile number as only digits in the 09XXXXXXXXX form (so 0917 000 1108, +63 917 000 1108 and 9170001108 match).
+String _demoPhone(String raw) {
+  var d = raw.replaceAll(RegExp(r'[^\d]'), '');
+  if (d.startsWith('63')) d = '0${d.substring(2)}';
+  if (d.length == 10 && d.startsWith('9')) d = '0$d';
+  return d;
+}
 
 /// Message for things that need a real server (passwords, accounts, text-message codes).
 const String kDemoOff = 'This is a demo, so this is turned off.';
 
-/// Signs in as the demo administrator or the demo resident. Returns an error message, or null.
-String? demoSignIn(String emailRaw, String pass) {
-  final email = emailRaw.trim().toLowerCase();
-  if (email.isEmpty) return 'Enter your email.';
+/// Signs in as the demo administrator or the demo resident, with an email OR a mobile number.
+/// Returns an error message, or null.
+String? demoSignIn(String idRaw, String pass) {
+  final id = idRaw.trim().toLowerCase();
+  if (id.isEmpty) return 'Enter your email or mobile number.';
   if (pass.isEmpty) return 'Enter your password.';
-  if (pass != kDemoPassword || (email != kDemoAdminEmail && email != kDemoResidentEmail)) {
-    return 'Demo logins: $kDemoAdminEmail or $kDemoResidentEmail, password $kDemoPassword.';
+  final phone = id.contains('@') ? '' : _demoPhone(id);
+  final admin = id == kDemoAdminEmail || (phone.isNotEmpty && phone == _demoPhone(kDemoAdminPhone));
+  final resident = id == kDemoResidentEmail || (phone.isNotEmpty && phone == _demoPhone(kDemoResidentPhone));
+  if (pass != kDemoPassword || (!admin && !resident)) {
+    return 'Demo logins: $kDemoAdminEmail or $kDemoAdminPhone (administrator), $kDemoResidentEmail or $kDemoResidentPhone (resident). Password $kDemoPassword.';
   }
-  startDemo(email == kDemoAdminEmail ? Role.admin : Role.resident);
+  startDemo(admin ? Role.admin : Role.resident);
   return null;
 }
 
@@ -38,7 +52,7 @@ void startDemo(Role role) {
     id: admin ? 'demo-admin' : 'demo-u2',
     name: admin ? 'Demo Administrator' : 'Maria Reyes',
     email: admin ? kDemoAdminEmail : kDemoResidentEmail,
-    phone: admin ? '0917 000 0000' : '0917 000 1103',
+    phone: admin ? kDemoAdminPhone : kDemoResidentPhone,
     unit: unit,
     mustChange: false,
     verified: true,
