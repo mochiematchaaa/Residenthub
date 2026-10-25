@@ -15,7 +15,9 @@ class AdminMaintenance extends StatefulWidget {
 
 class _AdminMaintenanceState extends State<AdminMaintenance> {
   static const _tabs = ['Schedule', 'Equipment', 'Staff'];
+  static const _kinds = ['All', 'Routine', 'Permits and tests'];
   String tab = 'Schedule';
+  String kind = 'All';
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +52,9 @@ class _AdminMaintenanceState extends State<AdminMaintenance> {
                 Expanded(child: MaintStat('To fix', maint.equipmentToFix, tone: maint.equipmentToFix > 0 ? Tone.bad : null)),
               ],
             ),
+            Text(_summary(), style: TextStyle(color: muted(context), fontSize: 12.5, height: 1.4)),
             FilterRow(options: _tabs, selected: tab, onSelect: (t) => setState(() => tab = t)),
+            if (tab == 'Schedule') FilterRow(options: _kinds, selected: kind, onSelect: (k) => setState(() => kind = k)),
             if (tab == 'Schedule') ..._schedule(context),
             if (tab == 'Equipment') ..._equipment(context),
             if (tab == 'Staff') ..._staff(context),
@@ -60,8 +64,18 @@ class _AdminMaintenanceState extends State<AdminMaintenance> {
     );
   }
 
+  String _summary() {
+    final now = DateTime.now();
+    final rt = maint.repairTime;
+    final avg = rt.$1;
+    final closed = maint.closures.map((e) => e.facility).toSet().join(', ');
+    return 'Spent on maintenance: ${peso(maint.spentIn(now.year, now.month))} this month, ${peso(maint.spentIn(now.year))} this year. '
+        '${avg == null ? 'No finished repairs yet.' : 'Average repair time ${avg < 1 ? 'under a day' : '${avg.toStringAsFixed(1)} days'} across ${rt.$2} finished repairs.'}'
+        '${closed.isEmpty ? '' : ' Closed to bookings now: $closed.'}';
+  }
+
   List<Widget> _schedule(BuildContext context) {
-    final list = maint.sortedTasks;
+    final list = maint.sortedTasks.where((t) => kind == 'All' || (kind == 'Routine' ? t.kind == 'Routine' : t.kind == 'Compliance')).toList();
     if (list.isEmpty) return const [EmptyBox('No maintenance tasks yet. Tap Task to add one.', icon: Icons.handyman_outlined)];
     return [
       for (final t in list)
@@ -73,6 +87,10 @@ class _AdminMaintenanceState extends State<AdminMaintenance> {
                 Expanded(child: Text(t.title, style: hd(16))),
                 Pill(taskState(t).$1, tone: toneFromLevel(taskState(t).$2)),
               ]),
+              if (t.kind == 'Compliance') ...[
+                const SizedBox(height: 4),
+                const Align(alignment: Alignment.centerLeft, child: Pill('Permit, certificate or test', tone: Tone.info)),
+              ],
               const SizedBox(height: 3),
               Text('${maint.equipOf(t).isEmpty ? 'No equipment' : maint.equipOf(t)} · ${t.every}', style: TextStyle(color: muted(context), fontSize: 12.5)),
               const SizedBox(height: 6),
@@ -83,13 +101,11 @@ class _AdminMaintenanceState extends State<AdminMaintenance> {
               Row(children: [
                 Expanded(
                   child: FilledButton(
-                    onPressed: () {
-                      maint.markDone(t, app);
-                      msg(context, 'Marked done. Next due ${shortDate(t.due)}.');
-                    },
+                    onPressed: () => showDoneSheet(context, t),
                     child: const Text('Mark done'),
                   ),
                 ),
+                IconButton(tooltip: 'Notify residents', onPressed: () => showNotifySheet(context, t), icon: const Icon(Icons.campaign_outlined)),
                 IconButton(tooltip: 'Edit', onPressed: () => showTaskSheet(context, task: t), icon: const Icon(Icons.edit_outlined)),
                 IconButton(
                   tooltip: 'Delete',
@@ -120,12 +136,18 @@ class _AdminMaintenanceState extends State<AdminMaintenance> {
                 Pill(e.status, tone: equipmentTone(e.status)),
               ]),
               const SizedBox(height: 3),
-              Text('${e.category} · ${e.location}', style: TextStyle(color: muted(context), fontSize: 12.5)),
+              Text('${e.category} · ${e.location}${e.vendor.isEmpty ? '' : ' · ${e.vendor}'}', style: TextStyle(color: muted(context), fontSize: 12.5)),
               const SizedBox(height: 6),
-              Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
                 Text(e.lastService == null ? 'Never serviced' : 'Last service ${shortDate(e.lastService!)}', style: const TextStyle(fontSize: 13)),
                 if (maint.openRepairsFor(app, e.id) > 0) Pill('${maint.openRepairsFor(app, e.id)} open repair', tone: Tone.warn),
+                if (e.warranty != null) _warranty(e.warranty!),
+                if (maint.spentOn(e.id) > 0) Text('Spent ${peso(maint.spentOn(e.id))}', style: const TextStyle(fontSize: 13)),
               ]),
+              if (e.facility.isNotEmpty && e.closes) ...[
+                const SizedBox(height: 4),
+                Text('Closes ${e.facility} to booking while not working', style: TextStyle(color: muted(context), fontSize: 12.5)),
+              ],
               const SizedBox(height: 6),
               Row(children: [
                 TextButton.icon(onPressed: () => showEquipmentSheet(context, item: e), icon: const Icon(Icons.edit_outlined, size: 18), label: const Text('Edit')),
@@ -144,6 +166,13 @@ class _AdminMaintenanceState extends State<AdminMaintenance> {
           ),
         ),
     ];
+  }
+
+  Widget _warranty(DateTime d) {
+    final n = daysFromToday(d);
+    if (n < 0) return const Pill('Warranty expired', tone: Tone.bad);
+    if (n <= 30) return Pill('Warranty ends in $n day${n == 1 ? '' : 's'}', tone: Tone.warn);
+    return Text('Warranty until ${shortDate(d)}', style: const TextStyle(fontSize: 13));
   }
 
   List<Widget> _staff(BuildContext context) {

@@ -23,6 +23,14 @@ class ResMaintenance extends StatelessWidget {
           title: 'Maintenance',
           subtitle: 'What the office is servicing, and the status of your repair requests. Some work may cause short interruptions.',
           children: [
+            for (final e in maint.closures)
+              RCard(
+                color: toneOf(context, Tone.warn).bg,
+                child: Text(
+                  '${e.facility} is closed for maintenance. ${e.name} is ${e.status.toLowerCase()}. It cannot be booked until it is working again.',
+                  style: TextStyle(color: toneOf(context, Tone.warn).fg, fontWeight: FontWeight.w600, height: 1.4),
+                ),
+              ),
             const SectionHeader('Coming up in the next 30 days'),
             if (upcoming.isEmpty) const EmptyBox('Nothing is scheduled in the next 30 days.', icon: Icons.handyman_outlined),
             for (final t in upcoming)
