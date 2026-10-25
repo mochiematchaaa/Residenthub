@@ -62,6 +62,7 @@ void startDemo(Role role) {
       if (admin || _residentMaySee(r, unit)) r,
   ];
   importRows(app, rows);
+  maint.seedDemo(app);
   if (admin) app.setAccounts(_demoAccounts());
   app.changed();
 }

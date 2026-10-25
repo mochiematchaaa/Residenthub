@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
+import '../../services/demo.dart' show kDemo;
 import '../../services/session.dart';
 import '../../widgets/widgets.dart';
 import 'admin_screens.dart';
@@ -72,6 +73,19 @@ class AdminMore extends StatelessWidget {
             onTap: () => go(context, const AdminParking()),
             trailing: app.pendingParking > 0 ? Pill('${app.pendingParking}', tone: Tone.warn) : null,
           ),
+          if (kDemo)
+            ListenableBuilder(
+              listenable: maint,
+              builder: (context, _) => NavTile(
+                icon: Icons.handyman_outlined,
+                title: 'Maintenance',
+                subtitle: '${maint.tasks.length} tasks · ${maint.equipment.length} equipment · ${maint.staff.length} staff',
+                onTap: () => go(context, const AdminMaintenance()),
+                trailing: maint.overdueCount + maint.dueThisWeekCount > 0
+                    ? Pill('${maint.overdueCount + maint.dueThisWeekCount} due', tone: maint.overdueCount > 0 ? Tone.bad : Tone.warn)
+                    : null,
+              ),
+            ),
           NavTile(icon: Icons.bar_chart_rounded, title: 'Reports', subtitle: 'Collections, units, concerns, bookings', onTap: () => go(context, const AdminReports())),
           NavTile(icon: Icons.history_rounded, title: 'Activity log', subtitle: '${app.activityLog.length} recorded', onTap: () => go(context, const AdminActivity())),
         ]),

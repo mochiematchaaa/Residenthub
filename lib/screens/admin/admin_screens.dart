@@ -13,6 +13,7 @@ export 'facility_screen.dart';
 export 'finance_screen.dart';
 export 'grievances_screen.dart';
 export 'home_screen.dart';
+export 'maintenance_screen.dart';
 export 'more_screen.dart';
 export 'parking_screen.dart';
 export 'polls_screen.dart';
