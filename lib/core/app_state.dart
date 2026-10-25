@@ -530,6 +530,9 @@ class AppState extends ChangeNotifier {
         (b.status == 'Pending' || b.status == 'Approved'));
   }
 
+  /// DEMO ONLY: tells whether a facility is closed because its equipment is not working. Null in the real app.
+  bool Function(String facility)? closedForMaintenance;
+
   /// One time of one amenity on one day (yyyy-mm-dd): past | closed | booked | pending | open.
   String slotState(int f, int i, String day) {
     if (f >= amenities.length) return 'closed';
@@ -540,6 +543,7 @@ class AppState extends ChangeNotifier {
     final start = (toMinutes(a.open) ?? 0) + i * a.mins;
     if (day == today && start <= now.hour * 60 + now.minute) return 'past';
     if (day == blockedDay && (blocked[_slotKey(f, i)] ?? false)) return 'closed';
+    if (closedForMaintenance?.call(a.name) ?? false) return 'closed';
     for (final b in bookings) {
       if (b.day == day && b.slot == i && b.place == a.name && (b.status == 'Pending' || b.status == 'Approved')) {
         return b.status == 'Approved' ? 'booked' : 'pending';

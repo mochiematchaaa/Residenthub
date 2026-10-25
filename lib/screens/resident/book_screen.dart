@@ -82,6 +82,14 @@ class _ResBookState extends State<ResBook> {
       title: 'Book a facility',
       subtitle: 'Check availability and send a reservation request.',
       children: [
+        if (maint.closureOf(cur.name) != null)
+          RCard(
+            color: toneOf(context, Tone.warn).bg,
+            child: Text(
+              '${cur.name} is closed for maintenance. ${maint.closureOf(cur.name)!.name} is ${maint.closureOf(cur.name)!.status.toLowerCase()}. Booking is paused until it is working again.',
+              style: TextStyle(color: toneOf(context, Tone.warn).fg, fontWeight: FontWeight.w600, height: 1.4),
+            ),
+          ),
         SizedBox(
           height: 150,
           child: ListView.separated(

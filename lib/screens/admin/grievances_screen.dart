@@ -35,8 +35,11 @@ class _GrievanceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final advance = FilledButton(
       onPressed: () {
-        app.advanceGrievance(g.id);
-        if (kDemo) maint.afterAdvance(g);
+        if (kDemo && g.stage == 1) {
+          showResolveSheet(context, g);
+        } else {
+          app.advanceGrievance(g.id);
+        }
       },
       child: Text(g.stage == 0 ? 'Start working on it' : 'Mark resolved'),
     );
