@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
+import '../../services/demo.dart' show kDemo;
 import '../../services/session.dart';
 import '../../widgets/widgets.dart';
 import 'resident_screens.dart';
@@ -51,6 +52,16 @@ class ResMore extends StatelessWidget {
             onTap: () => app.setResTab(2),
           ),
           NavTile(icon: Icons.edit_note_rounded, title: 'Grievances', subtitle: openGr == 0 ? 'Nothing open' : '$openGr open', onTap: () => go(context, const ResGrievances())),
+          if (kDemo)
+            ListenableBuilder(
+              listenable: maint,
+              builder: (context, _) => NavTile(
+                icon: Icons.handyman_outlined,
+                title: 'Maintenance',
+                subtitle: 'What the office is servicing and your repairs',
+                onTap: () => go(context, const ResMaintenance()),
+              ),
+            ),
           NavTile(
             icon: statusOf(rec?.usage ?? 'owner').icon,
             title: 'Unit Rental',

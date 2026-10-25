@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
+import '../../services/demo.dart' show kDemo;
+import '../shared/maintenance_widgets.dart';
 import '../../widgets/widgets.dart';
 
 class ResGrievances extends StatelessWidget {
@@ -11,7 +13,7 @@ class ResGrievances extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: app,
+      listenable: Listenable.merge([app, maint]),
       builder: (context, _) {
         final list = app.myGrievances;
         return SubPage(
@@ -55,6 +57,7 @@ class ResGrievances extends StatelessWidget {
                     ],
                     const SizedBox(height: 12),
                     _Progress(stage: g.stage, labels: const ['Open', 'In progress', 'Resolved']),
+                    if (kDemo) RepairInfo(g),
                   ],
                 ),
               ),

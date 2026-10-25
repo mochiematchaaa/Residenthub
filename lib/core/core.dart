@@ -5,6 +5,7 @@ export 'app_state.dart';
 export 'community.dart';
 export 'doc_model.dart';
 export 'expenses.dart';
+export 'maintenance.dart';
 export 'payments.dart';
 export 'theme.dart';
 export 'usage_forms.dart';
