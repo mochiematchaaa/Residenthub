@@ -125,7 +125,13 @@ async function sendSms(to: string, code: string) {
       headers: { "x-api-key": key, "Content-Type": "application/json" },
       body: JSON.stringify({ from, to, content: text }),
     });
-    if (!r.ok) throw new Error("sms failed");
+    if (!r.ok) {
+      const why = (await r.text().catch(() => "")).slice(0, 300);
+      console.error("httpSMS refused the message:", r.status, why);
+      let msg = "";
+      try { msg = String(JSON.parse(why).message ?? ""); } catch (_) { /* not JSON */ }
+      throw new Error("sms failed");
+    }
     return;
   }
   if (provider === "semaphore") {
