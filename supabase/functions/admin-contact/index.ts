@@ -8,7 +8,7 @@
 // For "email" the code is sent to the new address, and the sign-in email is changed once it is confirmed.
 // Residents cannot use this: their number and email are managed by the administrator.
 //
-// Uses the same secrets as verify-contact (SMTP_* and SMS_PROVIDER + provider keys: twilio, semaphore or httpsms).
+// Uses the same secrets as verify-contact (SMTP_* and SMS_PROVIDER + provider keys: twilio or semaphore).
 import { createClient } from "npm:@supabase/supabase-js@2";
 import nodemailer from "npm:nodemailer@6.9.16";
 
@@ -105,23 +105,6 @@ async function sendSms(to: string, code: string) {
     if (!r.ok) throw new Error(failed);
     return;
   }
-  if (provider === "httpsms") {
-    const key = Deno.env.get("HTTPSMS_API_KEY"), from = Deno.env.get("HTTPSMS_FROM");
-    if (!key || !from) throw new Error(notSet);
-    const r = await fetch("https://api.httpsms.com/v1/messages/send", {
-      method: "POST",
-      headers: { "x-api-key": key, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to, content: text }),
-    });
-    if (!r.ok) {
-      const why = (await r.text().catch(() => "")).slice(0, 300);
-      console.error("httpSMS refused the message:", r.status, why);
-      let msg = "";
-      try { msg = String(JSON.parse(why).message ?? ""); } catch (_) { /* not JSON */ }
-      throw new Error(`The text message could not be sent (httpSMS ${r.status}${msg ? ": " + msg : ""}).`);
-    }
-    return;
-  }
   if (provider === "semaphore") {
     const key = Deno.env.get("SEMAPHORE_API_KEY");
     if (!key) throw new Error(notSet);
@@ -133,7 +116,10 @@ async function sendSms(to: string, code: string) {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: form,
     });
-    if (!r.ok) throw new Error(failed);
+    if (!r.ok) {
+      console.error("Semaphore refused the message:", r.status, (await r.text().catch(() => "")).slice(0, 300));
+      throw new Error(`The text message could not be sent (Semaphore ${r.status}).`);
+    }
     return;
   }
   throw new Error(notSet);
