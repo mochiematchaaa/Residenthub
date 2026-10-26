@@ -129,7 +129,13 @@ async function sendSms(to: string, code: string) {
       headers: { "x-api-key": key, "Content-Type": "application/json" },
       body: JSON.stringify({ from, to, content: text }),
     });
-    if (!r.ok) throw new Error("The text message could not be sent. Check the number and try again.");
+    if (!r.ok) {
+      const why = (await r.text().catch(() => "")).slice(0, 300);
+      console.error("httpSMS refused the message:", r.status, why);
+      let msg = "";
+      try { msg = String(JSON.parse(why).message ?? ""); } catch (_) { /* not JSON */ }
+      throw new Error(`The text message could not be sent (httpSMS ${r.status}${msg ? ": " + msg : ""}).`);
+    }
     return;
   }
   if (provider === "semaphore") {
