@@ -6,6 +6,7 @@ import '../../core/core.dart';
 import '../../services/texting.dart';
 import '../../widgets/widgets.dart';
 import '../shared/import_sheet.dart';
+import '../shared/notify_sheet.dart';
 
 class AdminAnnouncements extends StatelessWidget {
   const AdminAnnouncements({super.key});
@@ -107,6 +108,17 @@ class AdminAnnouncements extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 100),
       children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => showNotifySheet(context),
+              icon: const Icon(Icons.campaign_outlined),
+              label: const Text('Notify residents'),
+            ),
+          ),
+        ),
         const Padding(padding: EdgeInsets.only(bottom: 12), child: ImportBar(['announcements'])),
         if (list.isEmpty) const EmptyBox('No announcements yet.', icon: Icons.campaign_outlined),
         for (final a in list)
