@@ -77,6 +77,7 @@ function smsReady(): boolean {
       (Deno.env.get("TWILIO_FROM") || Deno.env.get("TWILIO_MESSAGING_SERVICE_SID")));
   }
   if (p === "semaphore") return !!Deno.env.get("SEMAPHORE_API_KEY");
+  if (p === "httpsms") return !!(Deno.env.get("HTTPSMS_API_KEY") && Deno.env.get("HTTPSMS_FROM"));
   return false;
 }
 
@@ -111,6 +112,18 @@ async function sendSms(to: string, code: string) {
       method: "POST",
       headers: { Authorization: "Basic " + btoa(`${sid}:${token}`), "Content-Type": "application/x-www-form-urlencoded" },
       body: form,
+    });
+    if (!r.ok) throw new Error("sms failed");
+    return;
+  }
+  if (provider === "httpsms") {
+    // httpSMS: your own Android phone (with the httpSMS app) sends the text. https://docs.httpsms.com
+    const key = Deno.env.get("HTTPSMS_API_KEY"), from = Deno.env.get("HTTPSMS_FROM");
+    if (!key || !from) throw new Error("not set up");
+    const r = await fetch("https://api.httpsms.com/v1/messages/send", {
+      method: "POST",
+      headers: { "x-api-key": key, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to, content: text }),
     });
     if (!r.ok) throw new Error("sms failed");
     return;
