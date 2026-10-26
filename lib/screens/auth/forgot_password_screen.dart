@@ -37,8 +37,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   Future<void> _load() async {
     var o = await session.resetOptions();
-    // if the server could not be asked, offer both and let the server answer
-    if (o.error != null) o = const VerifyOptions(emailReady: true, smsReady: true);
+    // if the server could not be asked, offer email and let the server answer
+    if (o.error != null) o = const VerifyOptions(emailReady: true);
     if (!mounted) return;
     setState(() {
       _opts = o;
@@ -105,7 +105,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Widget build(BuildContext context) {
     return SubPage(
       title: 'Forgot password',
-      subtitle: 'Choose how to get a code. It goes to the email or mobile number on file for your account, so nobody else can take it over.',
+      subtitle: 'We will email a 6-digit code to the address on file for your account, so nobody else can take it over.',
       children: [
         RCard(
           padding: const EdgeInsets.all(18),

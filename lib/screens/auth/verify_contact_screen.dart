@@ -117,7 +117,7 @@ class _VerifyContactScreenState extends State<VerifyContactScreen> {
                   Text(
                     _sent
                         ? 'We sent a code by $way to $_sentTo. Enter it below. It expires in 10 minutes.'
-                        : 'For your security, confirm your account. Choose how you want to get your code.',
+                        : 'For your security, confirm your account. We will email you a 6-digit code.',
                     style: TextStyle(color: muted(context), fontSize: 13, height: 1.4),
                   ),
                   const SizedBox(height: 16),
