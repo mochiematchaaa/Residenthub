@@ -14,7 +14,7 @@ class AdminGrievances extends StatelessWidget {
     return ListenableBuilder(
       listenable: Listenable.merge([app, maint]),
       builder: (context, _) => SubPage(
-        title: 'Grievances',
+        title: 'Complaints',
         subtitle: 'Track resident concerns, assign the repair, and move them to resolved.',
         children: [
           for (final g in app.grievances) _GrievanceCard(g),
