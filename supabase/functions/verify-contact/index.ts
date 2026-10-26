@@ -180,7 +180,7 @@ Deno.serve(async (req: Request) => {
         ok: true,
         email: email ? maskEmail(email) : "",
         phone: phone ? maskPhone(phone) : "",
-        emailReady: emailReady() && !!email,
+        emailReady: false, // the mobile number is the required way to verify; email alone no longer counts
         smsReady: smsReady() && !!phone,
       });
     }
@@ -189,6 +189,7 @@ Deno.serve(async (req: Request) => {
     if (action === "send") {
       const useEmail = channel !== "sms", useSms = channel !== "email"; // no channel = both (older app)
       if (channel && channel !== "email" && channel !== "sms") return reply({ error: "Choose email or text message." }, 400);
+      if (channel === "email") return reply({ error: "Please verify with your mobile number (text message)." }, 400);
       if (useSms && !phone) return reply({ error: "The mobile number on this account is not valid. Ask the administrator to fix it." }, 400);
       if (useEmail && !email) return reply({ error: "This account has no email address." }, 400);
 
@@ -225,6 +226,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (action === "check" && channel === "email") return reply({ error: "Please verify with your mobile number (text message)." }, 400);
     if (action === "check" && (channel === "email" || channel === "sms")) {
       const code = String(body.code ?? "").trim();
       if (!/^\d{6}$/.test(code)) return reply({ error: "Enter the 6-digit code." }, 400);
