@@ -148,7 +148,8 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const action = String(body.action ?? "");
     const channel = String(body.channel ?? "");
-    if (channel !== "sms" && channel !== "email") return reply({ error: "Choose email or mobile number." }, 400);
+    if (channel === "sms") return reply({ error: "Mobile numbers are not verified in this system. Save it as a contact detail instead." }, 400);
+    if (channel !== "email") return reply({ error: "Choose email." }, 400);
 
     // The cleaned-up new value, and a check that nobody else already uses it.
     let value = "";

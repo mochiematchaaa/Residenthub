@@ -86,7 +86,7 @@ Deno.serve(async (req: Request) => {
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return reply({ error: "Enter a valid email address." }, 400);
       if (!name) return reply({ error: "Enter the resident's name." }, 400);
       if (!unit) return reply({ error: "Choose the resident's unit." }, 400);
-      if (!validPhone(phone)) return reply({ error: PHONE_MSG }, 400); // the mobile number is required: it is how the resident verifies
+      if (phone && !validPhone(phone)) return reply({ error: PHONE_MSG }, 400); // the mobile number is optional contact information
       const { data: unitRow } = await admin
         .from("records")
         .select("id")
@@ -152,11 +152,8 @@ Deno.serve(async (req: Request) => {
       if (body.name !== undefined) patch.name = String(body.name).trim();
       if (body.phone !== undefined) {
         const phone = String(body.phone).trim();
-        if (!validPhone(phone)) return reply({ error: PHONE_MSG }, 400);
-        const { data: cur } = await admin.from("profiles").select("phone").eq("id", userId).maybeSingle();
+        if (phone && !validPhone(phone)) return reply({ error: PHONE_MSG }, 400);
         patch.phone = phone;
-        // A new number must be verified again.
-        if (cur?.phone !== phone) patch.contact_verified_at = null;
       }
       if (body.unit !== undefined) {
         const unit = String(body.unit).trim();
