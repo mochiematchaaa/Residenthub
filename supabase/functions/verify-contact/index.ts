@@ -16,7 +16,6 @@
 //     SMS_PROVIDER=twilio      TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM (a number)
 //                              or TWILIO_MESSAGING_SERVICE_SID
 //     SMS_PROVIDER=semaphore   SEMAPHORE_API_KEY, optional SEMAPHORE_SENDER
-//     SMS_PROVIDER=httpsms     HTTPSMS_API_KEY and HTTPSMS_FROM (the number of the Android phone that sends, e.g. +639171234567)
 import { createClient } from "npm:@supabase/supabase-js@2";
 import nodemailer from "npm:nodemailer@6.9.16";
 
@@ -81,7 +80,6 @@ function smsReady(): boolean {
       (Deno.env.get("TWILIO_FROM") || Deno.env.get("TWILIO_MESSAGING_SERVICE_SID")));
   }
   if (p === "semaphore") return !!Deno.env.get("SEMAPHORE_API_KEY");
-  if (p === "httpsms") return !!(Deno.env.get("HTTPSMS_API_KEY") && Deno.env.get("HTTPSMS_FROM"));
   return false;
 }
 
@@ -120,24 +118,6 @@ async function sendSms(to: string, code: string) {
     if (!r.ok) throw new Error("The text message could not be sent. Check the number and try again.");
     return;
   }
-  if (provider === "httpsms") {
-    // httpSMS: your own Android phone (with the httpSMS app) sends the text. https://docs.httpsms.com
-    const key = Deno.env.get("HTTPSMS_API_KEY"), from = Deno.env.get("HTTPSMS_FROM");
-    if (!key || !from) throw new Error("Text messages are not set up yet. Please tell the administrator.");
-    const r = await fetch("https://api.httpsms.com/v1/messages/send", {
-      method: "POST",
-      headers: { "x-api-key": key, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to, content: text }),
-    });
-    if (!r.ok) {
-      const why = (await r.text().catch(() => "")).slice(0, 300);
-      console.error("httpSMS refused the message:", r.status, why);
-      let msg = "";
-      try { msg = String(JSON.parse(why).message ?? ""); } catch (_) { /* not JSON */ }
-      throw new Error(`The text message could not be sent (httpSMS ${r.status}${msg ? ": " + msg : ""}).`);
-    }
-    return;
-  }
   if (provider === "semaphore") {
     const key = Deno.env.get("SEMAPHORE_API_KEY");
     if (!key) throw new Error("Text messages are not set up yet. Please tell the administrator.");
@@ -149,7 +129,10 @@ async function sendSms(to: string, code: string) {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: form,
     });
-    if (!r.ok) throw new Error("The text message could not be sent. Check the number and try again.");
+    if (!r.ok) {
+      console.error("Semaphore refused the message:", r.status, (await r.text().catch(() => "")).slice(0, 300));
+      throw new Error(`The text message could not be sent (Semaphore ${r.status}).`);
+    }
     return;
   }
   throw new Error("Text messages are not set up yet. Please tell the administrator.");

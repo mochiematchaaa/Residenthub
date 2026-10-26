@@ -77,7 +77,6 @@ function smsReady(): boolean {
       (Deno.env.get("TWILIO_FROM") || Deno.env.get("TWILIO_MESSAGING_SERVICE_SID")));
   }
   if (p === "semaphore") return !!Deno.env.get("SEMAPHORE_API_KEY");
-  if (p === "httpsms") return !!(Deno.env.get("HTTPSMS_API_KEY") && Deno.env.get("HTTPSMS_FROM"));
   return false;
 }
 
@@ -116,24 +115,6 @@ async function sendSms(to: string, code: string) {
     if (!r.ok) throw new Error("sms failed");
     return;
   }
-  if (provider === "httpsms") {
-    // httpSMS: your own Android phone (with the httpSMS app) sends the text. https://docs.httpsms.com
-    const key = Deno.env.get("HTTPSMS_API_KEY"), from = Deno.env.get("HTTPSMS_FROM");
-    if (!key || !from) throw new Error("not set up");
-    const r = await fetch("https://api.httpsms.com/v1/messages/send", {
-      method: "POST",
-      headers: { "x-api-key": key, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to, content: text }),
-    });
-    if (!r.ok) {
-      const why = (await r.text().catch(() => "")).slice(0, 300);
-      console.error("httpSMS refused the message:", r.status, why);
-      let msg = "";
-      try { msg = String(JSON.parse(why).message ?? ""); } catch (_) { /* not JSON */ }
-      throw new Error("sms failed");
-    }
-    return;
-  }
   if (provider === "semaphore") {
     const key = Deno.env.get("SEMAPHORE_API_KEY");
     if (!key) throw new Error("not set up");
@@ -145,7 +126,10 @@ async function sendSms(to: string, code: string) {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: form,
     });
-    if (!r.ok) throw new Error("sms failed");
+    if (!r.ok) {
+      console.error("Semaphore refused the message:", r.status, (await r.text().catch(() => "")).slice(0, 300));
+      throw new Error("sms failed");
+    }
     return;
   }
   throw new Error("not set up");
