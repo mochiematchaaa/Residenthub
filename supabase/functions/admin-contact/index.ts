@@ -102,7 +102,11 @@ async function sendSms(to: string, code: string) {
       headers: { Authorization: "Basic " + btoa(`${sid}:${token}`), "Content-Type": "application/x-www-form-urlencoded" },
       body: form,
     });
-    if (!r.ok) throw new Error(failed);
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      console.error("Twilio refused the message:", r.status, JSON.stringify(j).slice(0, 300));
+      throw new Error(`The text message could not be sent (Twilio ${j.code ?? r.status}: ${String(j.message ?? "").slice(0, 160)}).`);
+    }
     return;
   }
   if (provider === "semaphore") {
