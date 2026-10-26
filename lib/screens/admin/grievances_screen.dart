@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
-import '../../services/demo.dart' show kDemo;
 import '../../widgets/widgets.dart';
 import '../shared/maintenance_widgets.dart';
 
@@ -16,9 +15,7 @@ class AdminGrievances extends StatelessWidget {
       listenable: Listenable.merge([app, maint]),
       builder: (context, _) => SubPage(
         title: 'Grievances',
-        subtitle: kDemo
-            ? 'Track resident concerns, assign the repair, and move them to resolved.'
-            : 'Track resident concerns and move them to resolved.',
+        subtitle: 'Track resident concerns, assign the repair, and move them to resolved.',
         children: [
           for (final g in app.grievances) _GrievanceCard(g),
         ],
@@ -35,7 +32,7 @@ class _GrievanceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final advance = FilledButton(
       onPressed: () {
-        if (kDemo && g.stage == 1) {
+        if (g.stage == 1) {
           showResolveSheet(context, g);
         } else {
           app.advanceGrievance(g.id);
@@ -57,7 +54,7 @@ class _GrievanceCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(g.body, style: TextStyle(color: muted(context), fontSize: 13)),
           ],
-          if (kDemo) RepairInfo(g, admin: true),
+          RepairInfo(g, admin: true),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -76,21 +73,18 @@ class _GrievanceCard extends StatelessWidget {
           ),
           if (g.stage < 2) ...[
             const SizedBox(height: 12),
-            if (kDemo)
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => showAssignSheet(context, g),
-                      child: Text(maint.staffById(maint.repairs[g.id]?.staffId) != null ? 'Reassign' : 'Assign repair'),
-                    ),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => showAssignSheet(context, g),
+                    child: Text(maint.staffById(maint.repairs[g.id]?.staffId) != null ? 'Reassign' : 'Assign repair'),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(child: advance),
-                ],
-              )
-            else
-              SizedBox(width: double.infinity, child: advance),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: advance),
+              ],
+            ),
           ],
         ],
       ),
