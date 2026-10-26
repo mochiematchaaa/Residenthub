@@ -1,7 +1,8 @@
-// DEMO ONLY: maintenance management (preventive schedule, equipment list, maintenance staff, repair assignment).
+// Maintenance management for the administrator: preventive schedule, equipment list, maintenance staff
+// and repair assignment on grievances.
 //
-// Nothing here is saved to the database. The screens that use it are only shown in the demo build
-// (`--dart-define=DEMO=true`), and the data lives in memory until the page is closed.
+// In the real app it is saved to the shared database like everything else (see cloud_codec.dart), so the
+// website shows the same data. In the demo build it only lives in memory until the page is closed.
 
 import 'package:flutter/foundation.dart';
 
@@ -12,6 +13,9 @@ import 'expenses.dart';
 class StaffMember {
   final int id;
   String name, role, phone;
+
+  /// Fields of the saved record that the app does not use. They are kept so that saving does not erase them.
+  Map<String, dynamic> extra = {};
   StaffMember(this.id, this.name, this.role, this.phone);
 }
 
@@ -24,9 +28,20 @@ class Equipment {
   bool closes; // when not working, the facility cannot be booked
   String vendor;
   DateTime? warranty; // warranty ends
+  Map<String, dynamic> extra = {}; // fields of the saved record that the app does not use
   Equipment(this.id, this.name, this.category, this.location, this.status, this.lastService,
       {this.facility = '', this.closes = false, this.vendor = '', this.warranty});
 }
+
+/// Names of the two built-in task types. The administrator can add more (see MaintenanceState.addKind).
+const String kindRoutine = 'Routine', kindCompliance = 'Compliance';
+const String kindRoutineLabel = 'Routine maintenance', kindComplianceLabel = 'Permit, certificate or test';
+
+/// The text shown for a task type ('Compliance' is shown as 'Permit, certificate or test').
+String kindLabel(String k) => k == kindRoutine ? kindRoutineLabel : (k == kindCompliance ? kindComplianceLabel : k);
+
+/// The stored type for a label picked in the form (a custom type is stored as typed).
+String kindFromLabel(String l) => l == kindRoutineLabel ? kindRoutine : (l == kindComplianceLabel ? kindCompliance : l);
 
 /// A routine job that repeats, such as 'Generator test run' every 2 weeks.
 class MTask {
@@ -38,6 +53,7 @@ class MTask {
   DateTime due;
   int? staffId;
   DateTime? lastDone;
+  Map<String, dynamic> extra = {}; // fields of the saved record that the app does not use (such as the history)
   MTask(this.id, this.title, this.every, this.days, this.due,
       {this.kind = 'Routine', this.equipId, this.equipLabel = '', this.staffId, this.lastDone});
 }
@@ -50,7 +66,8 @@ class Assignment {
   String notes, priority, completion;
   DateTime? resolvedOn;
   num cost;
-  Assignment({this.staffId, this.target, this.equipId, this.notes = '', this.priority = 'Normal', this.completion = '', this.resolvedOn, this.cost = 0});
+  String assignee, equipName; // the names as saved with the grievance (a resident cannot look up the staff list)
+  Assignment({this.staffId, this.target, this.equipId, this.notes = '', this.priority = 'Normal', this.completion = '', this.resolvedOn, this.cost = 0, this.assignee = '', this.equipName = ''});
 }
 
 /// Money spent on a repair or a maintenance job. It is also added to the Expenses list.
@@ -108,7 +125,16 @@ class MaintenanceState extends ChangeNotifier {
   final Map<int, Assignment> repairs = {}; // grievance id -> assignment
   final List<MaintCost> costs = [];
   int _seq = 1000;
-  int _next() => ++_seq;
+  // Ids are the time in milliseconds, like the website, so records made on either side never share an id.
+  int _next() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _seq = now > _seq ? now : _seq + 1;
+    return _seq;
+  }
+
+  /// Ids of the custom task types, by name (the saved record of a type needs one; the website uses it too).
+  final Map<String, int> kindIds = {};
+  int kindIdFor(String name) => kindIds.putIfAbsent(name, _next);
 
   void clear() {
     staff.clear();
@@ -116,6 +142,8 @@ class MaintenanceState extends ChangeNotifier {
     tasks.clear();
     repairs.clear();
     costs.clear();
+    customKinds.clear();
+    kindIds.clear();
     notifyListeners();
   }
 
@@ -189,9 +217,10 @@ class MaintenanceState extends ChangeNotifier {
   AppState? appRef;
 
   /// Adds a cost to the maintenance record and to the Expenses list of the administrator.
-  void _recordCost(AppState app, String item, String category, num amount, Equipment? equip, String payee, DateTime date) {
+  void _recordCost(AppState app, String item, String category, num amount, Equipment? equip, String payee, DateTime date,
+      {int? grievanceId, int? taskId}) {
     if (amount <= 0) return;
-    final id = DateTime.now().microsecondsSinceEpoch;
+    final id = _next();
     costs.add(MaintCost(id, date, item, amount, equip?.id));
     app.expenses.add(Expense(
       id: id,
@@ -204,6 +233,11 @@ class MaintenanceState extends ChangeNotifier {
       qty: 1,
       unitPrice: amount,
       date: date,
+      link: {
+        if (equip != null) 'equipId': '${equip.id}',
+        if (grievanceId != null) 'grievanceId': grievanceId,
+        if (taskId != null) 'taskId': '$taskId',
+      },
     ));
     app.expenses.sort((x, y) => y.date.compareTo(x.date));
   }
@@ -243,7 +277,10 @@ class MaintenanceState extends ChangeNotifier {
     t.due = DateTime(now.year, now.month, now.day + t.days, 12);
     final e = equipById(t.equipId);
     if (e != null) e.lastService = now;
-    _recordCost(app, 'Maintenance: ${t.title}', 'Janitorial and maintenance', cost, e, assigneeOf(t), now);
+    final hist = (t.extra['history'] is List ? List<dynamic>.from(t.extra['history'] as List) : <dynamic>[]);
+    hist.insert(0, {'date': dayKey(now), 'by': assigneeOf(t).isEmpty ? 'Office' : assigneeOf(t), 'note': '', 'cost': cost});
+    t.extra['history'] = hist.take(12).toList();
+    _recordCost(app, 'Maintenance: ${t.title}', 'Janitorial and maintenance', cost, e, assigneeOf(t), now, taskId: t.id);
     app.logActivity('Maintenance done: ${t.title}${cost > 0 ? ' (${peso(cost)})' : ''}', 'Maintenance');
     app.changed();
     notifyListeners();
@@ -273,6 +310,63 @@ class MaintenanceState extends ChangeNotifier {
       if (due != null) existing.due = due;
       app.logActivity('Maintenance task updated: $title', 'Maintenance');
     }
+    notifyListeners();
+  }
+
+  // ---- task types
+
+  /// Types the administrator created, in the order they were added.
+  final List<String> customKinds = [];
+
+  /// Every type a task can have, as stored: the two built-in ones and the custom ones.
+  List<String> get kinds => [kindRoutine, kindCompliance, ...customKinds];
+
+  /// Adds a task type and returns the stored name (the existing one when it is already there), or null for an empty name.
+  String? addKind(String raw) {
+    var name = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (name.isEmpty) return null;
+    if (name.length > 30) name = name.substring(0, 30).trim();
+    for (final k in kinds) {
+      if (k.toLowerCase() == name.toLowerCase() || kindLabel(k).toLowerCase() == name.toLowerCase()) return k;
+    }
+    customKinds.add(name);
+    kindIdFor(name);
+    notifyListeners();
+    return name;
+  }
+
+  /// Renames a custom type and every task that uses it. Returns an error text (or null when it worked) and the final name.
+  (String?, String) renameKind(String from, String raw, AppState app) {
+    if (!customKinds.contains(from)) return ('Only types you created can be renamed.', from);
+    var name = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (name.isEmpty) return ('Enter the type name.', from);
+    if (name.length > 30) name = name.substring(0, 30).trim();
+    if (name != from) {
+      for (final k in kinds) {
+        if (k != from && (k.toLowerCase() == name.toLowerCase() || kindLabel(k).toLowerCase() == name.toLowerCase())) {
+          return ('There is already a type with that name.', from);
+        }
+      }
+      customKinds[customKinds.indexOf(from)] = name;
+      final kid = kindIds.remove(from);
+      if (kid != null) kindIds[name] = kid;
+      for (final t in tasks) {
+        if (t.kind == from) t.kind = name;
+      }
+      app.logActivity('Task type renamed: $from to $name', 'Maintenance');
+      notifyListeners();
+    }
+    return (null, name);
+  }
+
+  /// Removes a custom type. Its tasks become routine maintenance.
+  void deleteKind(String k, AppState app) {
+    if (!customKinds.remove(k)) return;
+    kindIds.remove(k);
+    for (final t in tasks) {
+      if (t.kind == k) t.kind = kindRoutine;
+    }
+    app.logActivity('Task type deleted: $k', 'Maintenance');
     notifyListeners();
   }
 
@@ -356,7 +450,9 @@ class MaintenanceState extends ChangeNotifier {
       a.staffId = null;
       a.target = null;
     }
+    a.assignee = who?.name ?? '';
     a.equipId = equip?.id;
+    a.equipName = equip?.name ?? '';
     a.notes = notes;
     repairs[g.id] = a;
     if (who != null && equip != null && equip.status == 'Working') equip.status = 'Under maintenance';
@@ -379,7 +475,7 @@ class MaintenanceState extends ChangeNotifier {
       e.status = 'Working';
       e.lastService = now;
     }
-    _recordCost(app, 'Repair: ${g.title}', 'Repairs and improvements', cost, e, staffById(a.staffId)?.name ?? '', now);
+    _recordCost(app, 'Repair: ${g.title}', 'Repairs and improvements', cost, e, staffById(a.staffId)?.name ?? '', now, grievanceId: g.id);
     app.logActivity('Grievance resolved: ${g.title}${cost > 0 ? ' (${peso(cost)})' : ''}', 'Requests');
     app.changed();
     notifyListeners();

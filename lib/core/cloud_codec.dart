@@ -151,12 +151,194 @@ Due? _dueFrom(Map<String, dynamic> j) {
       dueDate: _s(j, 'dueDate'), paid: _b(j, 'paid'));
 }
 
-Map<String, dynamic> _grievanceJson(Grievance g) =>
-    {'id': g.id, 'title': g.title, 'body': g.body, 'by': g.by, 'stage': g.stage};
+Map<String, dynamic> _grievanceJson(Grievance g) {
+  final a = maint.repairs[g.id];
+  return {
+    'id': g.id,
+    'title': g.title,
+    'body': g.body,
+    'by': g.by,
+    'stage': g.stage,
+    if (a != null) ..._assignmentJson(a),
+  };
+}
 
 Grievance? _grievanceFrom(Map<String, dynamic> j) {
   if (j['id'] is! num) return null;
   return Grievance(_i(j, 'id'), _s(j, 'title'), _s(j, 'body'), _s(j, 'by'), _i(j, 'stage').clamp(0, 2));
+}
+
+// ---------------------------------------------------------------- maintenance
+// The website saves the same records (see maintenance.js there), so ids are written as text like it does.
+
+String _dk(DateTime? d) => d == null ? '' : dayKey(d);
+
+DateTime? _dkParse(String s) {
+  final m = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})').firstMatch(s);
+  if (m == null) return null;
+  return DateTime(int.parse(m.group(1)!), int.parse(m.group(2)!), int.parse(m.group(3)!), 12);
+}
+
+int? _idOrNull(Map j, String k) {
+  final v = _i(j, k);
+  return v == 0 ? null : v;
+}
+
+Map<String, dynamic> _rest(Map<String, dynamic> j, Set<String> own) =>
+    {for (final e in j.entries) if (!own.contains(e.key)) e.key: e.value};
+
+const _assignmentKeys = {
+  'staffId', 'assignee', 'target', 'equipId', 'equipName', 'notes', 'priority', 'resolvedOn', 'cost', 'completion'
+};
+
+Map<String, dynamic> _assignmentJson(Assignment a) => {
+      if (a.staffId != null) 'staffId': '${a.staffId}',
+      'assignee': a.assignee,
+      'target': _dk(a.target),
+      if (a.equipId != null) 'equipId': '${a.equipId}',
+      'equipName': a.equipName,
+      'notes': a.notes,
+      'priority': a.priority,
+      'resolvedOn': _dk(a.resolvedOn),
+      'cost': a.cost,
+      'completion': a.completion,
+    };
+
+/// The repair assignment saved on a grievance record, or null when it has none.
+Assignment? _assignmentFrom(Map<String, dynamic> j) {
+  if (!_assignmentKeys.any(j.containsKey)) return null;
+  return Assignment(
+    staffId: _idOrNull(j, 'staffId'),
+    target: _dkParse(_s(j, 'target')),
+    equipId: _idOrNull(j, 'equipId'),
+    notes: _s(j, 'notes'),
+    priority: _s(j, 'priority', 'Normal'),
+    completion: _s(j, 'completion'),
+    resolvedOn: _dkParse(_s(j, 'resolvedOn')),
+    cost: _num(j, 'cost'),
+    assignee: _s(j, 'assignee'),
+    equipName: _s(j, 'equipName'),
+  );
+}
+
+Map<String, dynamic> _staffJson(StaffMember s) =>
+    {...s.extra, 'id': '${s.id}', 'name': s.name, 'role': s.role, 'phone': s.phone};
+
+StaffMember? _staffFrom(Map<String, dynamic> j) {
+  final id = _i(j, 'id');
+  if (id == 0 || _s(j, 'name').isEmpty) return null;
+  return StaffMember(id, _s(j, 'name'), _s(j, 'role', 'Maintenance'), _s(j, 'phone'))
+    ..extra = _rest(j, {'id', 'name', 'role', 'phone'});
+}
+
+Map<String, dynamic> _equipJson(Equipment e) => {
+      ...e.extra,
+      'id': '${e.id}',
+      'name': e.name,
+      'category': e.category,
+      'location': e.location,
+      'status': e.status,
+      'lastService': _dk(e.lastService),
+      'facility': e.facility,
+      'closes': e.closes,
+      'vendor': e.vendor,
+      'warranty': _dk(e.warranty),
+    };
+
+Equipment? _equipFrom(Map<String, dynamic> j) {
+  final id = _i(j, 'id');
+  if (id == 0 || _s(j, 'name').isEmpty) return null;
+  return Equipment(id, _s(j, 'name'), _s(j, 'category', 'Other'), _s(j, 'location'), _s(j, 'status', 'Working'),
+      _dkParse(_s(j, 'lastService')),
+      facility: _s(j, 'facility'), closes: _b(j, 'closes'), vendor: _s(j, 'vendor'), warranty: _dkParse(_s(j, 'warranty')))
+    ..extra = _rest(j, {'id', 'name', 'category', 'location', 'status', 'lastService', 'facility', 'closes', 'vendor', 'warranty'});
+}
+
+Map<String, dynamic> _taskJson(MTask t) => {
+      ...t.extra,
+      'id': '${t.id}',
+      'title': t.title,
+      'kind': t.kind,
+      'every': t.every,
+      'days': t.days,
+      'due': _dk(t.due),
+      if (t.equipId != null) 'equipId': '${t.equipId}',
+      'equipName': maint.equipOf(t),
+      if (t.staffId != null) 'staffId': '${t.staffId}',
+      'assignee': maint.assigneeOf(t),
+      'lastDone': _dk(t.lastDone),
+    };
+
+MTask? _taskFrom(Map<String, dynamic> j) {
+  final id = _i(j, 'id');
+  if (id == 0 || _s(j, 'title').isEmpty) return null;
+  final now = DateTime.now();
+  return MTask(id, _s(j, 'title'), _s(j, 'every', 'Monthly'), _i(j, 'days', 30),
+      _dkParse(_s(j, 'due')) ?? DateTime(now.year, now.month, now.day, 12),
+      kind: _s(j, 'kind', kindRoutine),
+      equipId: _idOrNull(j, 'equipId'),
+      equipLabel: _s(j, 'equipName'),
+      staffId: _idOrNull(j, 'staffId'),
+      lastDone: _dkParse(_s(j, 'lastDone')))
+    ..extra = _rest(j, {'id', 'title', 'kind', 'every', 'days', 'due', 'equipId', 'equipName', 'staffId', 'assignee', 'lastDone'});
+}
+
+/// The row with its own id also inside the value (rows written by an import may not repeat it there).
+Iterable<CRow> _withId(Iterable<CRow> rows) =>
+    [for (final r in rows) CRow(r.kind, r.id, r.unit, {...r.value, 'id': r.value['id'] ?? r.id})];
+
+/// Loads the maintenance records (staff, equipment, tasks, task types and repair assignments).
+void _importMaintenance(AppState a, Map<String, List<CRow>> by) {
+  List<CRow> of(String k) => by[k] ?? const <CRow>[];
+  maint.appRef = a;
+  _mergeList<StaffMember>(maint.staff, _withId(of('staff')),
+      enc: _staffJson, dec: _staffFrom, id: (s) => '${s.id}', cmp: (x, y) => x.name.compareTo(y.name));
+  _mergeList<Equipment>(maint.equipment, _withId(of('equipment')),
+      enc: _equipJson, dec: _equipFrom, id: (e) => '${e.id}', cmp: (x, y) => x.name.compareTo(y.name));
+  _mergeList<MTask>(maint.tasks, _withId(of('mtask')),
+      enc: _taskJson, dec: _taskFrom, id: (t) => '${t.id}', cmp: (x, y) => x.due.compareTo(y.due));
+
+  final types = [
+    for (final r in of('mtype'))
+      if (_s(r.value, 'name').trim().isNotEmpty) (int.tryParse(r.id) ?? 0, _s(r.value, 'name').trim())
+  ]..sort((x, y) => x.$1.compareTo(y.$1));
+  maint.customKinds.clear();
+  maint.kindIds.clear();
+  for (final t in types) {
+    if (maint.customKinds.contains(t.$2)) continue;
+    maint.customKinds.add(t.$2);
+    if (t.$1 != 0) maint.kindIds[t.$2] = t.$1;
+  }
+
+  // Repair assignments live on the grievance records.
+  final reps = <int, Assignment>{};
+  for (final r in of('grievance')) {
+    final gid = int.tryParse(r.id);
+    final asg = _assignmentFrom(r.value);
+    if (gid != null && asg != null) reps[gid] = asg;
+  }
+  maint.repairs
+    ..clear()
+    ..addAll(reps);
+}
+
+/// The maintenance rows to save: the administrator's lists, and the facilities closed by broken equipment.
+void _exportMaintenance(void Function(String kind, String id, String unit, Map<String, dynamic> v) add) {
+  for (final s in maint.staff) {
+    add('staff', '${s.id}', '__admin', _staffJson(s));
+  }
+  for (final e in maint.equipment) {
+    add('equipment', '${e.id}', '__admin', _equipJson(e));
+  }
+  for (final t in maint.tasks) {
+    add('mtask', '${t.id}', '', _taskJson(t));
+  }
+  for (final k in maint.customKinds) {
+    add('mtype', '${maint.kindIdFor(k)}', '__admin', {'name': k});
+  }
+  for (final e in maint.closures) {
+    add('mclosure', e.facility, '', {'id': e.facility, 'facility': e.facility, 'equipName': e.name, 'reason': e.status});
+  }
 }
 
 Map<String, dynamic> _annJson(Announcement a) => {
@@ -295,6 +477,7 @@ PaymentRecord? _paymentFrom(Map<String, dynamic> j) {
 }
 
 Map<String, dynamic> _expenseJson(Expense e) => {
+      ...e.link,
       'id': e.id,
       'item': e.item,
       'category': e.category,
@@ -322,6 +505,7 @@ Expense? _expenseFrom(Map<String, dynamic> j) {
     qty: _num(j, 'qty', 1),
     unitPrice: _num(j, 'unitPrice'),
     date: DateTime(d.year, d.month, d.day),
+    link: {for (final k in const ['equipId', 'grievanceId', 'taskId']) if (j[k] != null && '${j[k]}'.isNotEmpty) k: j[k]},
   );
 }
 
@@ -398,6 +582,7 @@ List<CRow> exportRows(AppState a) {
   for (final s in a.slots) {
     add('slot', s.id, '', _slotJson(s));
   }
+  _exportMaintenance(add);
   add('setting', 'motor_rate', '', {'rate': a.motorRate});
   add('setting', 'motor_rate_daily', '', {'rate': a.motorRateDay});
   add('setting', 'dues_rate', '', {'rate': a.duesRate});
@@ -485,6 +670,7 @@ void importRows(AppState a, Iterable<CRow> all) {
       enc: _bookingJson, dec: _bookingFrom, id: (b) => '${b.id}', cmp: (x, y) => newestFirst(x.id, y.id));
   _mergeList<Due>(a.dues, of('due'),
       enc: _dueJson, dec: _dueFrom, id: (d) => '${d.id}', cmp: (x, y) => newestFirst(x.id, y.id));
+  _importMaintenance(a, by);
   _mergeList<Grievance>(a.grievances, of('grievance'),
       enc: _grievanceJson, dec: _grievanceFrom, id: (g) => '${g.id}', cmp: (x, y) => newestFirst(x.id, y.id));
   _mergeList<PaymentProof>(a.proofs, of('proof'),
@@ -493,6 +679,12 @@ void importRows(AppState a, Iterable<CRow> all) {
       enc: _paymentJson, dec: _paymentFrom, id: (p) => '${p.id}', cmp: (x, y) => newestFirst(x.id, y.id));
   _mergeList<Expense>(a.expenses, of('expense'),
       enc: _expenseJson, dec: _expenseFrom, id: (e) => '${e.id}', cmp: (x, y) => y.date.compareTo(x.date));
+  maint.costs
+    ..clear()
+    ..addAll([
+      for (final e in a.expenses)
+        if (e.link.isNotEmpty) MaintCost(e.id, e.date, e.item, e.amount, int.tryParse('${e.link['equipId'] ?? ''}'))
+    ]);
   _mergeList<Announcement>(a.announcements, of('announcement'),
       enc: _annJson, dec: _annFrom, id: (x) => '${x.id}', cmp: (x, y) => newestFirst(x.id, y.id));
   _mergeList<EventItem>(a.events, of('event'),
@@ -596,5 +788,7 @@ void importRows(AppState a, Iterable<CRow> all) {
     }
   }
 
+  if (admin) a.closedForMaintenance = (name) => maint.closureOf(name) != null;
+  maint.changed();
   a.loaded = true;
 }
