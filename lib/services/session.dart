@@ -114,29 +114,15 @@ class SessionService {
     if (kDemo) return demoSignIn(emailRaw, pass);
     final email = emailRaw.trim().toLowerCase();
     if (!ready) return 'The app is not connected to the database.';
-    if (email.isEmpty) return 'Enter your email or mobile number.';
+    if (email.isEmpty) return 'Enter your email address.';
     if (pass.isEmpty) return 'Enter your password.';
     final lock = _lockedUntil;
     if (lock != null && DateTime.now().isBefore(lock)) {
       return 'Too many failed attempts. Please wait a minute and try again.';
     }
-    // No "@" means a mobile number: the server function finds the account, signs in and returns the session.
-    final byPhone = !email.contains('@');
-    final phone = AppState.normalizePhone(email);
-    if (byPhone && !AppState.validMobile(phone)) {
-      return 'Enter a valid email or mobile number, e.g. 0917 555 0112.';
-    }
+    if (!email.contains('@')) return 'Enter a valid email address.';
     try {
-      if (byPhone) {
-        final r = await _c.functions.invoke('sign-in-phone', body: {'phone': phone, 'password': pass});
-        final d = r.data;
-        final sess = d is Map ? d['session'] : null;
-        final refresh = sess is Map ? sess['refresh_token']?.toString() : null;
-        if (refresh == null || refresh.isEmpty) return 'Could not sign in. Try again.';
-        await _c.auth.setSession(refresh);
-      } else {
-        await _c.auth.signInWithPassword(email: email, password: pass);
-      }
+      await _c.auth.signInWithPassword(email: email, password: pass);
     } on FunctionException catch (e) {
       final d = e.details;
       final msg = d is Map && d['error'] != null ? d['error'].toString() : 'Could not sign in (${e.status}).';
