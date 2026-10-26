@@ -9,6 +9,10 @@ import '../core/core.dart';
 /// Everything the visitor changes stays in memory and is gone when the page is closed.
 const bool kDemo = bool.fromEnvironment('DEMO');
 
+/// The demo and the prototype start EMPTY, so the import can be tried on empty lists.
+/// Build with `--dart-define=SAMPLE=true` to get the made-up sample data back.
+const bool kSampleData = bool.fromEnvironment('SAMPLE');
+
 const String kDemoPassword = 'Demo@1234';
 const String kDemoAdminEmail = 'admin@demo.test';
 const String kDemoResidentEmail = 'resident@demo.test';
@@ -59,13 +63,23 @@ void startDemo(Role role) {
   );
   final rows = <CRow>[
     for (final r in _demoRows())
-      if (admin || _residentMaySee(r, unit)) r,
+      if (_kept(r) && (admin || _residentMaySee(r, unit))) r,
   ];
   importRows(app, rows);
-  maint.seedDemo(app);
-  if (admin) app.setAccounts(_demoAccounts());
+  if (kSampleData) {
+    maint.seedDemo(app);
+  } else {
+    maint.clear();
+    maint.appRef = app;
+    app.closedForMaintenance = (name) => maint.closureOf(name) != null;
+  }
+  if (admin) app.setAccounts([for (final a in _demoAccounts()) if (kSampleData || a.id == 'demo-u2') a]);
   app.changed();
 }
+
+/// Without sample data only the settings (rates, payment methods, amenities, directory) and the demo resident's own
+/// unit are kept, so every list starts empty and can be filled with the import.
+bool _kept(CRow r) => kSampleData || r.kind == 'setting' || (r.kind == 'unit' && r.id == kDemoResidentUnit);
 
 /// What a resident could read from the real database: public rows and their own unit's rows.
 bool _residentMaySee(CRow r, String unit) {
