@@ -132,13 +132,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 18),
                           TextField(
                             controller: _email,
-                            keyboardType: kDemo ? TextInputType.text : TextInputType.emailAddress,
+                            keyboardType: TextInputType.text,
                             autocorrect: false,
                             enableSuggestions: false,
                             textInputAction: TextInputAction.next,
                             onChanged: (_) => setState(() => _error = null),
                             decoration: InputDecoration(
-                              labelText: kDemo ? 'Email or mobile number' : 'Email',
+                              labelText: 'Email or mobile number',
                               prefixIcon: const Icon(Icons.alternate_email_rounded),
                             ),
                           ),
