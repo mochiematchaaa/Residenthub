@@ -17,8 +17,8 @@ class ResHome extends StatelessWidget {
     final rows = app.myDueRows;
     final paid = rows.where((d) => d.status == 'Paid').length;
     final unpaid = rows.length - paid;
-    final posts = app.announcements.where((a) => a.status == 'Published').take(3).toList();
-    final emergency = app.announcements.where((a) => a.status == 'Published' && a.type == 'Emergency').toList();
+    final posts = app.myAnnouncements.take(3).toList();
+    final emergency = app.myAnnouncements.where((a) => a.type == 'Emergency').toList();
     final rec = app.myUnitRec;
     final upcoming = app.upcomingBooking;
     final openGr = app.myGrievances.where((g) => g.stage < 2).length;
@@ -171,7 +171,7 @@ class ResHome extends StatelessWidget {
                   onTap: () => app.setResTab(2),
                 ),
                 FeatureTile(
-                  title: 'Unit Rental',
+                  title: 'Unit status',
                   metric: statusOf(rec?.usage ?? 'owner').shortLabel,
                   subtitle: rec == null || rec.statusDate.isEmpty ? 'Tell the admin about your unit' : 'Updated ${rec.statusDate}',
                   icon: statusOf(rec?.usage ?? 'owner').icon,
@@ -340,7 +340,7 @@ class ResHome extends StatelessWidget {
         SearchItem('Events', 'Upcoming events, RSVP', Icons.celebration_outlined, () => go(context, const ResEvents())),
         SearchItem('Directory & house rules', 'Contacts, rules, FAQ', Icons.contacts_outlined, () => go(context, const ResDirectory())),
         SearchItem('Documents', 'House rules, forms, minutes', Icons.folder_copy_outlined, () => go(context, const ResDocuments())),
-        SearchItem('Unit Rental', 'Declare how your unit is used', Icons.home_work_rounded, () => go(context, const ResUnitStatus())),
+        SearchItem('Unit status', 'Declare how your unit is used', Icons.home_work_rounded, () => go(context, const ResUnitStatus())),
         SearchItem('Settings', 'Profile, password, dark mode, devices', Icons.settings_outlined, () => go(context, const ResSettings())),
       ];
 }
