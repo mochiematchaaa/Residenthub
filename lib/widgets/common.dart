@@ -126,8 +126,10 @@ class RCard extends StatelessWidget {
             color: gradient == null ? (color ?? cs.surface) : null,
             gradient: gradient,
             borderRadius: radius,
+            // A clear edge, so a white card never melts into the page behind it.
+            border: Border.all(color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF3A3D63) : const Color(0xFFD9D9E8)),
             boxShadow: [
-              BoxShadow(color: ink.withAlpha(14), blurRadius: 18, offset: const Offset(0, 6)),
+              BoxShadow(color: ink.withAlpha(24), blurRadius: 18, offset: const Offset(0, 6)),
             ],
           ),
           child: InkWell(
@@ -198,7 +200,7 @@ class SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.only(top: 6, bottom: 2),
       child: Row(
         children: [
-          Expanded(child: Text(title, style: hd(19))),
+          Expanded(child: Text(tr(title), style: hd(19))),
           if (action != null) TextButton(onPressed: onAction, child: Text(action!)),
         ],
       ),
@@ -247,7 +249,7 @@ class NavGroup extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 10),
-          child: Text(label.toUpperCase(), style: TextStyle(color: muted(context), fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
+          child: Text(tr(label).toUpperCase(), style: TextStyle(color: muted(context), fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
         ),
         for (var i = 0; i < children.length; i++) ...[
           if (i > 0) const SizedBox(height: 10),
@@ -371,9 +373,9 @@ class NavTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15.5)),
+                Text(tr(title), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15.5)),
                 const SizedBox(height: 2),
-                Text(subtitle, style: TextStyle(color: muted(context), fontSize: 12.5)),
+                Text(tr(subtitle), style: TextStyle(color: muted(context), fontSize: 12.5)),
               ],
             ),
           ),

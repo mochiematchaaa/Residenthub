@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/core.dart';
 import '../../widgets/widgets.dart';
 import 'admin_screens.dart';
+import 'pay_check.dart';
 
 /// Administrator dashboard (tab 1).
 class AdminHome extends StatelessWidget {
@@ -15,7 +16,6 @@ class AdminHome extends StatelessWidget {
     final recent = app.announcements.take(3).toList();
     final upcoming = app.upcomingBookings;
     final settled = app.dues.length - app.unpaidCount;
-    final attentionTotal = app.unpaidCount + app.pendingBookings + app.newStatusUpdates;
 
     return TabPage(
       header: AppHeader(
@@ -25,7 +25,7 @@ class AdminHome extends StatelessWidget {
         onAvatar: () => go(context, const AdminSettings()),
         actions: [
           CircleBtn(Icons.search_rounded, tooltip: 'Search', onTap: () => showQuickSearch(context, adminSearchItems(context))),
-          CircleBtn(Icons.notifications_none_rounded, dot: attentionTotal > 0, tooltip: 'Needs attention', onTap: () => showAdminAttention(context)),
+          CircleBtn(Icons.notifications_none_rounded, badge: app.bellBadge(adminBellItems()), tooltip: 'Needs attention', onTap: () => showAdminAttention(context)),
         ],
       ),
       children: [
@@ -43,6 +43,15 @@ class AdminHome extends StatelessWidget {
               ActionPill(Icons.home_work_outlined, 'Unit status', () => adminJump(context, 12)),
             ],
           ),
+        ),
+
+        // --- charges that may already be paid: "Did they pay?"
+        PayCheckCard(
+          limit: 3,
+          onOpenAll: () {
+            financeTabRequest.value = 'Check';
+            adminJump(context, 3);
+          },
         ),
 
         // --- overview

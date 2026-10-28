@@ -35,6 +35,9 @@ class PaymentRecord {
 /// What a motor parking payment is for. Same text as the website.
 const parkingPayFor = 'Motor parking rental';
 
+/// The parking sticker fee and the parking rental are one thing. Older records are read under the one name.
+String normPayFor(String t) => t == 'Parking sticker fee' ? parkingPayFor : t;
+
 /// A payment proof sent by a resident, waiting for the admin to confirm.
 class PaymentProof {
   final int id;
@@ -50,7 +53,31 @@ class PaymentProof {
   final bool direct;
 
   /// For a parking payment: the slot the resident reserved.
-  final String slot;
+  String slot;
+
+  /// When the resident sent it (milliseconds, 0 = unknown, then the date is used), and whether the
+  /// system posted it by itself after the waiting time.
+  final int at;
+  bool auto;
+
+  /// A photo of the online payment the resident attached (a "data:image/..." text, so the website shows it too). Empty = none.
+  final String image;
+
+  /// The day the resident says they paid, like "Oct 27, 2026" (empty on older records).
+  final String paidOn;
+
+  /// True for a payment that renews a monthly parking rental (the slot is already theirs).
+  final bool renew;
+
+  /// When the details were sent. Older records only have a date, so 9 AM of that day is used.
+  DateTime get sentAt {
+    if (at > 1000000000000) return DateTime.fromMillisecondsSinceEpoch(at);
+    final m = RegExp(r'^([A-Za-z]{3}) (\d{1,2}), (\d{4})$').firstMatch(date);
+    if (m == null) return DateTime.now();
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return DateTime(int.parse(m[3]!), names.indexOf(m[1]!) + 1, int.parse(m[2]!), 9);
+  }
+
   PaymentProof(this.id, this.unit, this.payer, this.method, this.reference,
       this.date, this.amount,
       {this.status = 'Pending',
@@ -60,7 +87,12 @@ class PaymentProof {
       this.reason = '',
       this.rejectedOn = '',
       this.direct = false,
-      this.slot = ''});
+      this.slot = '',
+      this.at = 0,
+      this.auto = false,
+      this.image = '',
+      this.paidOn = '',
+      this.renew = false});
 
   /// Shared with the website through the live database (same field names).
   Map<String, dynamic> toJson() => {
@@ -79,6 +111,12 @@ class PaymentProof {
         if (rejectedOn.isNotEmpty) 'rejectedOn': rejectedOn,
         if (direct) 'direct': true,
         if (slot.isNotEmpty) 'slot': slot,
+        if (at > 0) 'at': at,
+        if (image.isNotEmpty) 'image': image,
+        if (paidOn.isNotEmpty) 'paidOn': paidOn,
+        if (auto) 'auto': true,
+        if (renew) 'renew': true,
+        if (auto) 'confirmedBy': 'Automatic posting',
       };
 
   static PaymentProof? fromJson(Map<String, dynamic> j) {
@@ -96,13 +134,18 @@ class PaymentProof {
       s('date'),
       amount is num ? amount : (num.tryParse(amount.toString()) ?? 0),
       status: st == 'Confirmed' || st == 'Rejected' ? st : 'Pending',
-      forText: s('forText'),
+      forText: normPayFor(s('forText')),
       receiptNo: s('receiptNo'),
       confirmedOn: s('confirmedOn'),
       reason: s('reason'),
       rejectedOn: s('rejectedOn'),
       direct: j['direct'] == true,
       slot: s('slot'),
+      at: j['at'] is num ? (j['at'] as num).toInt() : 0,
+      auto: j['auto'] == true,
+      image: s('image'),
+      paidOn: s('paidOn'),
+      renew: j['renew'] == true,
     );
   }
 }

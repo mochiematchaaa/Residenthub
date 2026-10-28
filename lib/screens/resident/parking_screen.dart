@@ -1,37 +1,155 @@
 // RESIDENT page: Parking (pick and rent a slot).
 
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
 import '../../widgets/widgets.dart';
+import '../shared/payment_widgets.dart';
 
 /// Opens the "I have paid" form for the parking slot the resident reserved.
 void sendParkingPayment(BuildContext context) {
   final r = app.myParkingReq;
   if (r == null || r.slot.isEmpty) return;
-  final methods = [for (final m in app.enabledPayMethods) m.name];
+  final methods = [for (final m in app.enabledPayMethods) if (m.name != AppState.officePay) m.name];
   if (methods.isEmpty) {
-    msg(context, 'Payment options are not set up yet. Please pay at the office.');
+    msg(context, 'Online payment options are not set up yet. Please pay at the office.');
     return;
   }
   showFormSheet(
     context,
     title: 'Pay for ${r.slot}',
-    subtitle: 'Pay ${peso(r.amount)} using one of the options under Dues, then enter the reference number from your receipt. '
-        'The office verifies it and the slot becomes yours.',
+    subtitle: 'Pay ${peso(r.amount)} with GCash, Maya or bank transfer, then enter the reference number and add a screenshot of your payment. '
+        'The office checks it and confirms your rental. Prefer to pay at the office? Close this and tap "I\'ll walk in today".',
+    photo: const PhotoSpec('photo', 'Screenshot of your payment', hint: 'It helps the office confirm your rental faster.'),
     choices: [ChoiceSpec('method', 'Paid through', methods, methods.first)],
-    fields: const [FieldSpec('ref', 'Reference no.', hint: 'From your GCash / Maya / bank / office receipt')],
+    fields: [
+      const FieldSpec('ref', 'Reference no.', hint: 'From your GCash / Maya / bank receipt'),
+      FieldSpec('paid', 'Date you paid', hint: 'Like ${shortDate(DateTime.now())}', initial: shortDate(DateTime.now())),
+    ],
     submit: 'Send payment details',
     onSubmit: (v) {
-      final err = app.submitParkingProof(v['method'] as String, v['ref'] as String);
+      final pic = v['photo'];
+      final err = app.submitParkingProof(v['method'] as String, v['ref'] as String,
+          image: pic is Uint8List ? proofImageText(pic) : '', paidOn: v['paid'] as String);
       if (err == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (context.mounted) msg(context, 'Sent. The office will verify your payment and assign the slot.');
+          if (context.mounted) msg(context, 'Sent. The office will verify your payment and confirm your rental.');
         });
       }
       return err;
     },
   );
+}
+
+/// Opens the "I have paid" form to renew the monthly rental of the slot the resident already has.
+void sendRenewalPayment(BuildContext context) {
+  final s = app.slotOf(app.myUnit);
+  if (s == null) return;
+  final methods = [for (final m in app.enabledPayMethods) if (m.name != AppState.officePay) m.name];
+  if (methods.isEmpty) {
+    msg(context, 'Online payment options are not set up yet. Tap "I\'ll walk in today" and pay at the office.');
+    return;
+  }
+  final d = parkDueOf(s);
+  showFormSheet(
+    context,
+    title: 'Renew ${s.id}',
+    subtitle: 'Pay ${peso(app.parkRenewAmount(s))} with GCash, Maya or bank transfer${d != null ? ' (next payment due ${isoShort(d.nextDue)})' : ''}, then enter the reference number and add a screenshot of your payment. '
+        'The office checks it, extends your rental and sends you a text with your next due date.',
+    photo: const PhotoSpec('photo', 'Screenshot of your payment', hint: 'It helps the office confirm your renewal faster.'),
+    choices: [ChoiceSpec('method', 'Paid through', methods, methods.first)],
+    fields: [
+      const FieldSpec('ref', 'Reference no.', hint: 'From your GCash / Maya / bank receipt'),
+      FieldSpec('paid', 'Date you paid', hint: 'Like ${shortDate(DateTime.now())}', initial: shortDate(DateTime.now())),
+    ],
+    submit: 'Send payment details',
+    onSubmit: (v) {
+      final pic = v['photo'];
+      final err = app.submitParkingRenewProof(v['method'] as String, v['ref'] as String, image: pic is Uint8List ? proofImageText(pic) : '', paidOn: v['paid'] as String);
+      if (err == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (context.mounted) msg(context, 'Sent. The office will verify your payment and renew your rental.');
+        });
+      }
+      return err;
+    },
+  );
+}
+
+/// The card on the Parking page when a monthly rental is about to end (or the resident already answered).
+class RenewCard extends StatelessWidget {
+  final ParkingSlot slot;
+  const RenewCard({super.key, required this.slot});
+
+  @override
+  Widget build(BuildContext context) {
+    final d = parkDueOf(slot);
+    final leave = app.leaveNotes.containsKey(app.myUnit);
+    final pr = app.renewProofOf(app.myUnit, slot.id);
+    final w = app.walkinOf(app.myUnit, renew: true);
+    if (d == null || (!d.soon && !leave && pr == null && w == null)) return const SizedBox.shrink();
+    final String title;
+    final String body;
+    final actions = <Widget>[];
+    var tone = d.late ? Tone.bad : Tone.warn;
+    if (leave) {
+      tone = Tone.info;
+      title = 'You told the office you will not renew';
+      body = 'Slot ${slot.id} stays yours until ${isoShort(d.until)}, then it becomes free for other residents.';
+      actions.add(OutlinedButton(onPressed: app.parkLeaveUndo, child: const Text('I changed my mind')));
+    } else if (pr != null) {
+      title = 'Renewal payment sent';
+      body = 'Reference ${pr.reference}. The office will verify it, then your rental is extended and you get a text message with your next due date.';
+    } else if (w != null) {
+      title = 'Walk-in sent';
+      body = '${app.walkinText(w, 'You')} When the office records your payment, your rental is renewed and you get a text message with your next due date.';
+      actions.add(OutlinedButton(onPressed: () => app.parkWalkInCancel(renew: true), child: const Text('Cancel walk-in')));
+    } else {
+      title = d.late ? 'Your parking rental has ended or is due now' : 'Your parking rental is almost up';
+      body = 'Slot ${slot.id} runs until ${isoShort(d.until)}. The next payment of ${peso(app.parkRenewAmount(slot))} is due ${isoShort(d.nextDue)} (${parkDaysText(d.days)}). '
+          'Did you forget, or do you no longer plan to rent? Renew to keep your slot, or tell the office if you are leaving.';
+      actions.addAll([
+        FilledButton(onPressed: () => sendRenewalPayment(context), child: const Text('Renew online')),
+        OutlinedButton(
+          onPressed: () {
+            final err = app.parkWalkIn(renew: true);
+            msg(context, err ?? 'Sent. The office will expect you today. Pay at the counter and your rental is renewed.');
+          },
+          child: const Text("I'll walk in today"),
+        ),
+        TextButton(
+          onPressed: () => showFormSheet(
+            context,
+            title: 'Not renewing ${slot.id}',
+            subtitle: 'Tell the office you will not renew. You keep the slot until ${isoShort(d.until)}, then it becomes free for other residents. You can change your mind before then.',
+            fields: const [FieldSpec('note', 'Message to the office (optional)', lines: 3)],
+            submit: 'Tell the office',
+            onSubmit: (v) => app.parkLeave('${v['note'] ?? ''}'),
+          ),
+          child: const Text("I won't renew"),
+        ),
+      ]);
+    }
+    final t = toneOf(context, tone);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: t.bg, borderRadius: BorderRadius.circular(22)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: hd(17, color: t.fg)),
+          const SizedBox(height: 6),
+          Text(body, style: TextStyle(color: t.fg, fontSize: 13, height: 1.4)),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 6, children: actions),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 /// Resident: the parking slot of the unit, the charge, and which slots are free.
@@ -41,14 +159,15 @@ class ResParking extends StatelessWidget {
   const ResParking({super.key, this.tab = false});
 
   void _reserve(BuildContext context, ParkingSlot s) {
-    final monthLabel = 'Monthly (1 month)${app.motorRate > 0 ? ' · ${peso(app.motorRate)}' : ''}';
-    final dayLabel = 'Daily · ${peso(app.motorRateDay)} per day';
-    final hasDaily = app.motorRateDay > 0;
-    final options = [if (app.motorRate > 0 || !hasDaily) monthLabel, if (hasDaily) dayLabel];
+    final rates = app.parkRatesFor(s.size);
+    final monthLabel = 'Monthly (1 month)${rates.month > 0 ? ' · ${peso(rates.month)}' : ''}';
+    final dayLabel = 'Daily · ${peso(rates.day)} per day';
+    final hasDaily = rates.day > 0;
+    final options = [if (rates.month > 0 || !hasDaily) monthLabel, if (hasDaily) dayLabel];
     showFormSheet(
       context,
-      title: 'Reserve ${s.id}',
-      subtitle: 'Choose how long you will rent it. The slot is held for you. Pay the rental and send the payment details, then the office approves it.',
+      title: 'Reserve ${s.id} · ${s.size} slot',
+      subtitle: 'This is a ${s.size.toLowerCase()} slot${rates.sqm > 0 ? ' (${rates.sqm} sqm)' : ''}, so the price is set for that size. Choose how long you will rent it. The slot is held for you. Pay the rental and send the payment details, then the office approves it.',
       choices: [ChoiceSpec('plan', 'Rental', options, options.first)],
       fields: [
         if (hasDaily) FieldSpec('days', 'Number of days', type: TextInputType.number, initial: '1', onlyWhenKey: 'plan', onlyWhenValue: dayLabel),
@@ -103,8 +222,6 @@ class ResParking extends StatelessWidget {
         final held = app.heldSlots;
         final canPick = mine == null && req == null && app.slots.isNotEmpty;
         final cs = Theme.of(context).colorScheme;
-        final rate = app.motorRate;
-        final rateDay = app.motorRateDay;
         final kids = <Widget>[
           PastelCard(
             color: mine != null ? Pastel.mint : (req != null ? Pastel.butter : Pastel.sky),
@@ -161,7 +278,37 @@ class ResParking extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   if (st == 1 && req.amount > 0)
-                    SizedBox(width: double.infinity, child: FilledButton(onPressed: () => sendParkingPayment(context), child: Text('Pay ${peso(req.amount)} now'))),
+                    SizedBox(width: double.infinity, child: FilledButton(onPressed: () => sendParkingPayment(context), child: Text('Pay ${peso(req.amount)} online'))),
+                  if (st == 1 && req.amount > 0) ...[
+                    const SizedBox(height: 8),
+                    if (app.walkinOf(app.myUnit) == null)
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: () {
+                            final err = app.parkWalkIn();
+                            msg(context, err ?? 'Sent. The office will expect you today. Pay at the counter (cash, check, card or e-wallet) and your rental starts.');
+                          },
+                          child: const Text("Walk-in: I'll pay at the office today"),
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(color: Colors.white.withAlpha(150), borderRadius: BorderRadius.circular(16)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Walk-in sent', style: TextStyle(fontWeight: FontWeight.w800)),
+                            const SizedBox(height: 2),
+                            Text('${app.walkinText(app.walkinOf(app.myUnit)!, 'You')} Pay at the counter with cash, check, card or e-wallet. When the office records it, your rental starts and you get a text with your next due date.',
+                                style: const TextStyle(color: inkSoft, fontSize: 12.5, height: 1.35)),
+                            TextButton(onPressed: app.parkWalkInCancel, child: const Text('Cancel walk-in')),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                  ],
                   if (st == 1)
                     SizedBox(
                       width: double.infinity,
@@ -194,7 +341,7 @@ class ResParking extends StatelessWidget {
                   Text(
                     app.slots.isEmpty
                         ? 'The office has not set up the parking slots yet. You can still send a request.'
-                        : 'Tap a free slot on the map to reserve it.${rate > 0 || rateDay > 0 ? ' Rent it ${rate > 0 ? 'by the month (${peso(rate)})' : ''}${rate > 0 && rateDay > 0 ? ' or ' : ''}${rateDay > 0 ? 'by the day (${peso(rateDay)})' : ''}, paid before the office approves.' : ''}',
+                        : 'Tap a free slot on the map to reserve it. The rental depends on the size of the slot (see the price list below). You pay before the office approves it.',
                     style: const TextStyle(color: inkSoft, height: 1.4),
                   ),
                   if (app.slots.isEmpty) ...[
@@ -214,6 +361,7 @@ class ResParking extends StatelessWidget {
               ],
             ),
           ),
+          if (mine != null) RenewCard(slot: mine),
           if (app.slots.isNotEmpty)
             RCard(
               child: Column(
@@ -257,6 +405,12 @@ class ResParking extends StatelessWidget {
                                 children: [
                                   Text(s.id, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: isMine ? Colors.white : t.fg)),
                                   Text(label, style: TextStyle(fontSize: 10.5, color: isMine ? lav : t.fg)),
+                                  Text(
+                                    !s.used && holder == null && app.parkRatesFor(s.size).month > 0 ? '${s.size} · ${peso(app.parkRatesFor(s.size).month)}' : s.size,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontSize: 9, color: (isMine ? lav : t.fg).withValues(alpha: 0.75)),
+                                  ),
                                 ],
                               ),
                             ),
@@ -267,6 +421,25 @@ class ResParking extends StatelessWidget {
                 ],
               ),
             ),
+          RCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Rental price by slot size', style: hd(18)),
+                const SizedBox(height: 4),
+                Text('A bigger slot costs more. Each slot on the map shows its size.', style: TextStyle(color: muted(context), fontSize: 12.5)),
+                for (final z in app.parkSizes) ...[
+                  const Divider(height: 18),
+                  Row(
+                    children: [
+                      Expanded(child: Text('${z.name}${z.sqm > 0 ? ' · ${z.sqm} sqm' : ''}', style: const TextStyle(fontWeight: FontWeight.w700))),
+                      Text('${z.month > 0 ? '${peso(z.month)} / month' : '—'}${z.day > 0 ? ' · ${peso(z.day)} / day' : ''}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
           RCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

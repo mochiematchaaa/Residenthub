@@ -85,11 +85,30 @@ Map<String, dynamic> _unitJson(Unit u) => {
       'type': u.type,
       'status': u.status,
       'contact': u.contact,
+      if (u.area > 0) 'area': u.area,
+      if (u.dueDay > 0) 'dueDay': u.dueDay,
       'usage': u.usage,
       'statusNote': u.statusNote,
       'statusDate': u.statusDate,
       'usageStatus': u.usageStatus,
       'usageRemark': u.usageRemark,
+      if (u.profileUpdated > 0 || u.selfUpdated > 0) ...{
+        'email': u.email,
+        'moveIn': u.moveIn,
+        'residents': u.residents,
+        'members': u.members,
+        'pets': u.pets,
+        'vehicles': u.vehicles,
+        'emergencyName': u.emergencyName,
+        'emergencyRelation': u.emergencyRelation,
+        'emergencyPhone': u.emergencyPhone,
+        'noteResident': u.noteResident,
+        'noteOffice': u.noteOffice,
+        'profileUpdated': u.profileUpdated,
+        'profileBy': u.profileBy,
+        'selfUpdated': u.selfUpdated,
+        'selfBy': u.selfBy,
+      },
       'usageInfo': {for (final e in u.usageInfo.entries) e.key: e.key == 'agree' ? e.value == 'true' : e.value},
     };
 
@@ -102,11 +121,28 @@ Unit? _unitFrom(Map<String, dynamic> j) {
       statusDate: _s(j, 'statusDate'),
       usageStatus: _s(j, 'usageStatus'),
       usageRemark: _s(j, 'usageRemark'),
+      area: _num(j, 'area'),
+      dueDay: _i(j, 'dueDay'),
       usageInfo: {
         if (j['usageInfo'] is Map)
           for (final e in (j['usageInfo'] as Map).entries)
             if (e.value != null && e.value.toString().isNotEmpty && e.value != false) e.key.toString(): e.value.toString(),
-      });
+      })
+    ..email = _s(j, 'email')
+    ..moveIn = _s(j, 'moveIn')
+    ..residents = _i(j, 'residents')
+    ..members = _s(j, 'members')
+    ..pets = _s(j, 'pets')
+    ..vehicles = _s(j, 'vehicles')
+    ..emergencyName = _s(j, 'emergencyName')
+    ..emergencyRelation = _s(j, 'emergencyRelation')
+    ..emergencyPhone = _s(j, 'emergencyPhone')
+    ..noteResident = _s(j, 'noteResident')
+    ..noteOffice = _s(j, 'noteOffice')
+    ..profileUpdated = _i(j, 'profileUpdated')
+    ..profileBy = _s(j, 'profileBy')
+    ..selfUpdated = _i(j, 'selfUpdated')
+    ..selfBy = _s(j, 'selfBy');
 }
 
 Map<String, dynamic> _updateJson(StatusUpdate s) =>
@@ -142,203 +178,50 @@ Map<String, dynamic> _dueJson(Due d) => {
       'amount': d.amount,
       'note': d.note,
       'dueDate': d.dueDate,
+      if (d.billedOn.isNotEmpty) 'billedOn': d.billedOn,
+      if (d.area > 0) 'area': d.area,
+      if (d.rate > 0) 'rate': d.rate,
+      if (d.remindedOn.isNotEmpty) 'remindedOn': d.remindedOn,
+      if (d.reminders > 0) 'reminders': d.reminders,
+      if (d.remindMsg.isNotEmpty) 'remindMsg': d.remindMsg,
+      if (d.checkedAt > 0) 'checkedAt': d.checkedAt,
+      if (d.checkedNo.isNotEmpty) 'checkedNo': d.checkedNo,
+      if (d.lateFeeId > 0) 'lateFeeId': d.lateFeeId,
+      if (d.remindedAt > 0) 'remindedAt': d.remindedAt,
+      if (d.lateFeeAuto) 'lateFeeAuto': true,
+      if (d.balanceOf > 0) 'balanceOf': d.balanceOf,
+      if (d.lateFor > 0) 'lateFor': d.lateFor,
+      if (d.partOf > 0) 'partOf': d.partOf,
       'paid': d.paid,
     };
 
 Due? _dueFrom(Map<String, dynamic> j) {
   if (j['id'] is! num) return null;
-  return Due(_i(j, 'id'), _s(j, 'unit'), _s(j, 'name'), _num(j, 'amount'), _s(j, 'note', 'Charge'),
-      dueDate: _s(j, 'dueDate'), paid: _b(j, 'paid'));
+  return Due(_i(j, 'id'), _s(j, 'unit'), _s(j, 'name'), _num(j, 'amount'), normPayFor(_s(j, 'note', 'Charge')),
+      dueDate: _s(j, 'dueDate'),
+      paid: _b(j, 'paid'),
+      billedOn: _s(j, 'billedOn'),
+      area: _num(j, 'area'),
+      rate: _num(j, 'rate'),
+      remindedOn: _s(j, 'remindedOn'),
+      reminders: _i(j, 'reminders'),
+      remindMsg: _s(j, 'remindMsg'),
+      checkedAt: _i(j, 'checkedAt'),
+      checkedNo: _s(j, 'checkedNo'),
+      lateFeeId: _i(j, 'lateFeeId'),
+      remindedAt: _i(j, 'remindedAt'),
+      lateFeeAuto: _b(j, 'lateFeeAuto'),
+      balanceOf: _i(j, 'balanceOf'),
+      lateFor: _i(j, 'lateFor'),
+      partOf: _num(j, 'partOf'));
 }
 
-Map<String, dynamic> _grievanceJson(Grievance g) {
-  final a = maint.repairs[g.id];
-  return {
-    'id': g.id,
-    'title': g.title,
-    'body': g.body,
-    'by': g.by,
-    'stage': g.stage,
-    if (a != null) ..._assignmentJson(a),
-  };
-}
+Map<String, dynamic> _grievanceJson(Grievance g) =>
+    {'id': g.id, 'title': g.title, 'body': g.body, 'by': g.by, 'stage': g.stage};
 
 Grievance? _grievanceFrom(Map<String, dynamic> j) {
   if (j['id'] is! num) return null;
   return Grievance(_i(j, 'id'), _s(j, 'title'), _s(j, 'body'), _s(j, 'by'), _i(j, 'stage').clamp(0, 2));
-}
-
-// ---------------------------------------------------------------- maintenance
-// The website saves the same records (see maintenance.js there), so ids are written as text like it does.
-
-String _dk(DateTime? d) => d == null ? '' : dayKey(d);
-
-DateTime? _dkParse(String s) {
-  final m = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})').firstMatch(s);
-  if (m == null) return null;
-  return DateTime(int.parse(m.group(1)!), int.parse(m.group(2)!), int.parse(m.group(3)!), 12);
-}
-
-int? _idOrNull(Map j, String k) {
-  final v = _i(j, k);
-  return v == 0 ? null : v;
-}
-
-Map<String, dynamic> _rest(Map<String, dynamic> j, Set<String> own) =>
-    {for (final e in j.entries) if (!own.contains(e.key)) e.key: e.value};
-
-const _assignmentKeys = {
-  'staffId', 'assignee', 'target', 'equipId', 'equipName', 'notes', 'priority', 'resolvedOn', 'cost', 'completion'
-};
-
-Map<String, dynamic> _assignmentJson(Assignment a) => {
-      if (a.staffId != null) 'staffId': '${a.staffId}',
-      'assignee': a.assignee,
-      'target': _dk(a.target),
-      if (a.equipId != null) 'equipId': '${a.equipId}',
-      'equipName': a.equipName,
-      'notes': a.notes,
-      'priority': a.priority,
-      'resolvedOn': _dk(a.resolvedOn),
-      'cost': a.cost,
-      'completion': a.completion,
-    };
-
-/// The repair assignment saved on a grievance record, or null when it has none.
-Assignment? _assignmentFrom(Map<String, dynamic> j) {
-  if (!_assignmentKeys.any(j.containsKey)) return null;
-  return Assignment(
-    staffId: _idOrNull(j, 'staffId'),
-    target: _dkParse(_s(j, 'target')),
-    equipId: _idOrNull(j, 'equipId'),
-    notes: _s(j, 'notes'),
-    priority: _s(j, 'priority', 'Normal'),
-    completion: _s(j, 'completion'),
-    resolvedOn: _dkParse(_s(j, 'resolvedOn')),
-    cost: _num(j, 'cost'),
-    assignee: _s(j, 'assignee'),
-    equipName: _s(j, 'equipName'),
-  );
-}
-
-Map<String, dynamic> _staffJson(StaffMember s) =>
-    {...s.extra, 'id': '${s.id}', 'name': s.name, 'role': s.role, 'phone': s.phone};
-
-StaffMember? _staffFrom(Map<String, dynamic> j) {
-  final id = _i(j, 'id');
-  if (id == 0 || _s(j, 'name').isEmpty) return null;
-  return StaffMember(id, _s(j, 'name'), _s(j, 'role', 'Maintenance'), _s(j, 'phone'))
-    ..extra = _rest(j, {'id', 'name', 'role', 'phone'});
-}
-
-Map<String, dynamic> _equipJson(Equipment e) => {
-      ...e.extra,
-      'id': '${e.id}',
-      'name': e.name,
-      'category': e.category,
-      'location': e.location,
-      'status': e.status,
-      'lastService': _dk(e.lastService),
-      'facility': e.facility,
-      'closes': e.closes,
-      'vendor': e.vendor,
-      'warranty': _dk(e.warranty),
-    };
-
-Equipment? _equipFrom(Map<String, dynamic> j) {
-  final id = _i(j, 'id');
-  if (id == 0 || _s(j, 'name').isEmpty) return null;
-  return Equipment(id, _s(j, 'name'), _s(j, 'category', 'Other'), _s(j, 'location'), _s(j, 'status', 'Working'),
-      _dkParse(_s(j, 'lastService')),
-      facility: _s(j, 'facility'), closes: _b(j, 'closes'), vendor: _s(j, 'vendor'), warranty: _dkParse(_s(j, 'warranty')))
-    ..extra = _rest(j, {'id', 'name', 'category', 'location', 'status', 'lastService', 'facility', 'closes', 'vendor', 'warranty'});
-}
-
-Map<String, dynamic> _taskJson(MTask t) => {
-      ...t.extra,
-      'id': '${t.id}',
-      'title': t.title,
-      'kind': t.kind,
-      'every': t.every,
-      'days': t.days,
-      'due': _dk(t.due),
-      if (t.equipId != null) 'equipId': '${t.equipId}',
-      'equipName': maint.equipOf(t),
-      if (t.staffId != null) 'staffId': '${t.staffId}',
-      'assignee': maint.assigneeOf(t),
-      'lastDone': _dk(t.lastDone),
-    };
-
-MTask? _taskFrom(Map<String, dynamic> j) {
-  final id = _i(j, 'id');
-  if (id == 0 || _s(j, 'title').isEmpty) return null;
-  final now = DateTime.now();
-  return MTask(id, _s(j, 'title'), _s(j, 'every', 'Monthly'), _i(j, 'days', 30),
-      _dkParse(_s(j, 'due')) ?? DateTime(now.year, now.month, now.day, 12),
-      kind: _s(j, 'kind', kindRoutine),
-      equipId: _idOrNull(j, 'equipId'),
-      equipLabel: _s(j, 'equipName'),
-      staffId: _idOrNull(j, 'staffId'),
-      lastDone: _dkParse(_s(j, 'lastDone')))
-    ..extra = _rest(j, {'id', 'title', 'kind', 'every', 'days', 'due', 'equipId', 'equipName', 'staffId', 'assignee', 'lastDone'});
-}
-
-/// The row with its own id also inside the value (rows written by an import may not repeat it there).
-Iterable<CRow> _withId(Iterable<CRow> rows) =>
-    [for (final r in rows) CRow(r.kind, r.id, r.unit, {...r.value, 'id': r.value['id'] ?? r.id})];
-
-/// Loads the maintenance records (staff, equipment, tasks, task types and repair assignments).
-void _importMaintenance(AppState a, Map<String, List<CRow>> by) {
-  List<CRow> of(String k) => by[k] ?? const <CRow>[];
-  maint.appRef = a;
-  _mergeList<StaffMember>(maint.staff, _withId(of('staff')),
-      enc: _staffJson, dec: _staffFrom, id: (s) => '${s.id}', cmp: (x, y) => x.name.compareTo(y.name));
-  _mergeList<Equipment>(maint.equipment, _withId(of('equipment')),
-      enc: _equipJson, dec: _equipFrom, id: (e) => '${e.id}', cmp: (x, y) => x.name.compareTo(y.name));
-  _mergeList<MTask>(maint.tasks, _withId(of('mtask')),
-      enc: _taskJson, dec: _taskFrom, id: (t) => '${t.id}', cmp: (x, y) => x.due.compareTo(y.due));
-
-  final types = [
-    for (final r in of('mtype'))
-      if (_s(r.value, 'name').trim().isNotEmpty) (int.tryParse(r.id) ?? 0, _s(r.value, 'name').trim())
-  ]..sort((x, y) => x.$1.compareTo(y.$1));
-  maint.customKinds.clear();
-  maint.kindIds.clear();
-  for (final t in types) {
-    if (maint.customKinds.contains(t.$2)) continue;
-    maint.customKinds.add(t.$2);
-    if (t.$1 != 0) maint.kindIds[t.$2] = t.$1;
-  }
-
-  // Repair assignments live on the grievance records.
-  final reps = <int, Assignment>{};
-  for (final r in of('grievance')) {
-    final gid = int.tryParse(r.id);
-    final asg = _assignmentFrom(r.value);
-    if (gid != null && asg != null) reps[gid] = asg;
-  }
-  maint.repairs
-    ..clear()
-    ..addAll(reps);
-}
-
-/// The maintenance rows to save: the administrator's lists, and the facilities closed by broken equipment.
-void _exportMaintenance(void Function(String kind, String id, String unit, Map<String, dynamic> v) add) {
-  for (final s in maint.staff) {
-    add('staff', '${s.id}', '__admin', _staffJson(s));
-  }
-  for (final e in maint.equipment) {
-    add('equipment', '${e.id}', '__admin', _equipJson(e));
-  }
-  for (final t in maint.tasks) {
-    add('mtask', '${t.id}', '', _taskJson(t));
-  }
-  for (final k in maint.customKinds) {
-    add('mtype', '${maint.kindIdFor(k)}', '__admin', {'name': k});
-  }
-  for (final e in maint.closures) {
-    add('mclosure', e.facility, '', {'id': e.facility, 'facility': e.facility, 'equipName': e.name, 'reason': e.status});
-  }
 }
 
 Map<String, dynamic> _annJson(Announcement a) => {
@@ -369,17 +252,75 @@ EventItem? _eventFrom(Map<String, dynamic> j) {
 
 Map<String, dynamic> _pollJson(Poll p) => {
       'id': p.id,
+      'kind': p.kind,
+      'category': p.category,
       'question': p.question,
-      'open': p.open,
+      'titleHtml': p.titleHtml,
+      'descHtml': p.descHtml,
+      'open': p.openFlag,
       'closes': p.closes,
-      'options': [for (final o in p.options) o.text],
+      'closeKey': p.closeKey,
+      'showResults': p.showResults,
+      'options': p.questions.isEmpty ? <String>[] : p.questions.first.options,
+      if (!p.legacy)
+        'questions': [
+          for (final q in p.questions)
+            {'id': q.id, 'type': q.type, 'html': q.html, 'text': q.text, 'required': q.required, 'max': q.max, 'options': q.options},
+        ],
     };
 
 Poll? _pollFrom(Map<String, dynamic> j) {
   if (j['id'] is! num) return null;
-  final opts = j['options'];
-  return Poll(_i(j, 'id'), _s(j, 'question'), _b(j, 'open'), _s(j, 'closes'),
-      [if (opts is List) for (final o in opts) PollOption(o.toString(), 0)]);
+  final kind = _s(j, 'kind', 'poll') == 'election' ? 'election' : 'poll';
+  final qs = <PollQuestion>[];
+  final raw = j['questions'];
+  if (raw is List && raw.isNotEmpty) {
+    for (var i = 0; i < raw.length; i++) {
+      final q = raw[i];
+      if (q is! Map) continue;
+      final html = _s(q, 'html');
+      final text = _s(q, 'text').isNotEmpty ? _s(q, 'text') : RtDoc.fromHtml(html).plain;
+      qs.add(PollQuestion(_s(q, 'id', 'q${i + 1}'), _s(q, 'type', 'choice'), html, text, _b(q, 'required'), _i(q, 'max'),
+          [if (q['options'] is List) for (final o in q['options'] as List) o.toString()]));
+    }
+  }
+  final legacy = qs.isEmpty;
+  if (legacy) {
+    final opts = j['options'];
+    qs.add(PollQuestion('q1', 'choice', '', _s(j, 'question'), true, 0, [if (opts is List) for (final o in opts) o.toString()]));
+  }
+  final title = _s(j, 'question').isNotEmpty ? _s(j, 'question') : qs.first.text;
+  return Poll(_i(j, 'id'), title, _b(j, 'open'), _s(j, 'closes', '—'), qs,
+      kind: kind,
+      category: _s(j, 'category', kind == 'election' ? 'Governance & elections' : 'General'),
+      titleHtml: _s(j, 'titleHtml'),
+      descHtml: _s(j, 'descHtml'),
+      closeKey: _s(j, 'closeKey'),
+      showResults: _s(j, 'showResults', kind == 'election' ? 'closed' : 'vote'),
+      legacy: legacy);
+}
+
+PollBallot? _ballotFrom(String id, Map<String, dynamic> j) {
+  final i = id.indexOf('|');
+  if (i < 0) return null;
+  final poll = int.tryParse(id.substring(i + 1)) ?? _i(j, 'poll');
+  final answers = <String, dynamic>{};
+  final raw = j['answers'];
+  if (raw is Map) {
+    for (final e in raw.entries) {
+      final v = e.value;
+      if (v is List) {
+        answers['${e.key}'] = [for (final x in v) if (x is num) x.toInt()];
+      } else if (v is num) {
+        answers['${e.key}'] = v.toInt();
+      } else if (v != null) {
+        answers['${e.key}'] = v.toString();
+      }
+    }
+  } else if (j['option'] is num) {
+    answers['q1'] = (j['option'] as num).toInt();
+  }
+  return PollBallot(poll, id.substring(0, i), _s(j, 'at'), answers);
 }
 
 Map<String, dynamic> _docJson(DocItem d) => {
@@ -441,11 +382,11 @@ DocItem? _docFrom(Map<String, dynamic> j) {
 }
 
 Map<String, dynamic> _slotJson(ParkingSlot s) =>
-    {'id': s.id, 'unit': s.unit, 'plan': s.plan, 'from': s.from, 'until': s.until, 'amount': s.amount};
+    {'id': s.id, 'unit': s.unit, 'plan': s.plan, 'from': s.from, 'until': s.until, 'amount': s.amount, 'size': s.size};
 
 ParkingSlot? _slotFrom(Map<String, dynamic> j) {
   final id = _s(j, 'id');
-  return id.isEmpty ? null : ParkingSlot(id, _s(j, 'unit'), _s(j, 'plan', 'month') == 'day' ? 'day' : 'month', _s(j, 'from'), _s(j, 'until'), _num(j, 'amount'));
+  return id.isEmpty ? null : (ParkingSlot(id, _s(j, 'unit'), _s(j, 'plan', 'month') == 'day' ? 'day' : 'month', _s(j, 'from'), _s(j, 'until'), _num(j, 'amount'))..size = _s(j, 'size', 'Regular'));
 }
 
 Map<String, dynamic> _requestJson(ParkingReq r) =>
@@ -477,7 +418,6 @@ PaymentRecord? _paymentFrom(Map<String, dynamic> j) {
 }
 
 Map<String, dynamic> _expenseJson(Expense e) => {
-      ...e.link,
       'id': e.id,
       'item': e.item,
       'category': e.category,
@@ -505,7 +445,6 @@ Expense? _expenseFrom(Map<String, dynamic> j) {
     qty: _num(j, 'qty', 1),
     unitPrice: _num(j, 'unitPrice'),
     date: DateTime(d.year, d.month, d.day),
-    link: {for (final k in const ['equipId', 'grievanceId', 'taskId']) if (j[k] != null && '${j[k]}'.isNotEmpty) k: j[k]},
   );
 }
 
@@ -549,9 +488,9 @@ List<CRow> exportRows(AppState a) {
     final i = k.indexOf('|');
     add('rsvp', k, k.substring(0, i), {'event': int.tryParse(k.substring(i + 1)) ?? 0});
   }
-  for (final e in a._votes.entries) {
+  for (final e in a._ballots.entries) {
     final i = e.key.indexOf('|');
-    add('vote', e.key, e.key.substring(0, i), {'poll': int.tryParse(e.key.substring(i + 1)) ?? 0, 'option': e.value});
+    add('vote', e.key, e.key.substring(0, i), {'poll': e.value.poll, 'answers': e.value.answers, 'at': e.value.at});
   }
   for (final x in a.activityLog) {
     add('activity', '${x.at.millisecondsSinceEpoch}', '__admin', _activityJson(x));
@@ -582,10 +521,22 @@ List<CRow> exportRows(AppState a) {
   for (final s in a.slots) {
     add('slot', s.id, '', _slotJson(s));
   }
-  _exportMaintenance(add);
   add('setting', 'motor_rate', '', {'rate': a.motorRate});
   add('setting', 'motor_rate_daily', '', {'rate': a.motorRateDay});
-  add('setting', 'dues_rate', '', {'rate': a.duesRate});
+  if (a.parkSizesSaved.isNotEmpty) {
+    add('setting', 'park_sizes', '', {
+      'list': [for (final z in a.parkSizesSaved) {'name': z.name, 'sqm': z.sqm, 'month': z.month, 'day': z.day}]
+    });
+  }
+  add('setting', 'dues_rate_sqm', '', {'rate': a.duesRate});
+  add('setting', 'poll_categories', '', {'list': a.pollCats});
+  add('setting', 'autopost', '', {'on': a.autoPostOn, 'hours': a.autoPostHours});
+  add('setting', 'reminders', '', {
+    for (final k in remKinds) k: {'on': a.remOf(k).on ? 'yes' : 'no', 'days': a.remOf(k).days, 'freq': a.remOf(k).freq, 'msg': a.remOf(k).msg},
+  });
+  add('setting', 'autobill', '', {'on': a.autoBillOn ? 'yes' : 'no'});
+  add('setting', 'paycheck', '', {'pct': a.latePct});
+  add('setting', 'latefee', '', {'on': a.lateFeeOn, 'days': a.lateFeeDays});
   add('setting', 'paymethods', '', {
     'list': [
       for (final m in a.payMethods) {'name': m.name, 'details': m.details, 'enabled': m.enabled}
@@ -648,9 +599,12 @@ void importRows(AppState a, Iterable<CRow> all) {
   final admin = a.role == Role.admin;
 
   // who voted / who is going (counts are worked out from these)
-  a._votes
+  a._ballots
     ..clear()
-    ..addEntries([for (final r in of('vote')) MapEntry(r.id, _i(r.value, 'option'))]);
+    ..addEntries([
+      for (final r in of('vote'))
+        if (_ballotFrom(r.id, r.value) != null) MapEntry(r.id, _ballotFrom(r.id, r.value)!)
+    ]);
   a._rsvps
     ..clear()
     ..addAll([for (final r in of('rsvp')) r.id]);
@@ -670,7 +624,6 @@ void importRows(AppState a, Iterable<CRow> all) {
       enc: _bookingJson, dec: _bookingFrom, id: (b) => '${b.id}', cmp: (x, y) => newestFirst(x.id, y.id));
   _mergeList<Due>(a.dues, of('due'),
       enc: _dueJson, dec: _dueFrom, id: (d) => '${d.id}', cmp: (x, y) => newestFirst(x.id, y.id));
-  _importMaintenance(a, by);
   _mergeList<Grievance>(a.grievances, of('grievance'),
       enc: _grievanceJson, dec: _grievanceFrom, id: (g) => '${g.id}', cmp: (x, y) => newestFirst(x.id, y.id));
   _mergeList<PaymentProof>(a.proofs, of('proof'),
@@ -679,30 +632,13 @@ void importRows(AppState a, Iterable<CRow> all) {
       enc: _paymentJson, dec: _paymentFrom, id: (p) => '${p.id}', cmp: (x, y) => newestFirst(x.id, y.id));
   _mergeList<Expense>(a.expenses, of('expense'),
       enc: _expenseJson, dec: _expenseFrom, id: (e) => '${e.id}', cmp: (x, y) => y.date.compareTo(x.date));
-  maint.costs
-    ..clear()
-    ..addAll([
-      for (final e in a.expenses)
-        if (e.link.isNotEmpty) MaintCost(e.id, e.date, e.item, e.amount, int.tryParse('${e.link['equipId'] ?? ''}'))
-    ]);
   _mergeList<Announcement>(a.announcements, of('announcement'),
       enc: _annJson, dec: _annFrom, id: (x) => '${x.id}', cmp: (x, y) => newestFirst(x.id, y.id));
   _mergeList<EventItem>(a.events, of('event'),
       enc: _eventJson, dec: _eventFrom, id: (x) => '${x.id}', cmp: (x, y) => newestFirst(x.id, y.id));
   _mergeList<Poll>(a.polls, of('poll'),
       enc: _pollJson, dec: _pollFrom, id: (p) => '${p.id}', cmp: (x, y) => newestFirst(x.id, y.id));
-  for (final p in a.polls) {
-    for (final o in p.options) {
-      o.votes = 0;
-    }
-  }
-  for (final e in a._votes.entries) {
-    final i = e.key.indexOf('|');
-    final pid = int.tryParse(e.key.substring(i + 1));
-    for (final p in a.polls.where((p) => p.id == pid)) {
-      if (e.value >= 0 && e.value < p.options.length) p.options[e.value].votes++;
-    }
-  }
+  a.recountPolls();
 
   final others = a.docs.where((d) => !d.isLive).toList();
   _mergeList<DocItem>(others, of('doc'),
@@ -727,9 +663,56 @@ void importRows(AppState a, Iterable<CRow> all) {
 
   // settings
   final st = {for (final r in of('setting')) r.id: r.value};
+  final pc = st['poll_categories']?['list'];
+  if (pc is List && pc.isNotEmpty) {
+    a.pollCats
+      ..clear()
+      ..addAll([for (final c in pc) c.toString()]);
+  }
   a.motorRate = _num(st['motor_rate'] ?? const {}, 'rate');
   a.motorRateDay = _num(st['motor_rate_daily'] ?? const {}, 'rate');
-  a.duesRate = _num(st['dues_rate'] ?? const {}, 'rate');
+  final ps = st['park_sizes']?['list'];
+  a.parkSizesSaved = [
+    if (ps is List)
+      for (final x in ps)
+        if (x is Map) ParkSize(_s(x, 'name', 'Regular'), _num(x, 'sqm'), _num(x, 'month'), _num(x, 'day')),
+  ];
+  a.duesRate = _num(st['dues_rate_sqm'] ?? const {}, 'rate');
+  final ap = st['autopost'];
+  if (ap != null) {
+    a.autoPostOn = ap['on'] != false;
+    final h = _num(ap, 'hours').toInt();
+    a.autoPostHours = h > 0 ? h : 24;
+  }
+  final ab = st['autobill'];
+  a.autoBillOn = ab == null || _s(ab, 'on', 'yes') != 'no';
+  final rm = st['reminders'];
+  for (final k in remKinds) {
+    final c = rm?[k];
+    final d = k == 'parking' ? RemCfg(days: 5, freq: 'every') : RemCfg(days: 2, freq: 'daily');
+    if (c is Map) {
+      d.on = _s(c, 'on', 'yes') != 'no';
+      final n = _num(c, 'days').toInt();
+      if (n >= 1) d.days = n;
+      final f = _s(c, 'freq');
+      if (remFreqLabels.containsKey(f)) d.freq = f;
+      d.msg = _s(c, 'msg');
+    }
+    if (k == 'parking') {
+      a.remParking = d;
+      parkSoonDays = d.on ? d.days : -9999;
+    } else {
+      a.remDues = d;
+    }
+  }
+  final lateCfg = st['paycheck'];
+  if (lateCfg != null && _num(lateCfg, 'pct') > 0) a.latePct = _num(lateCfg, 'pct');
+  final lf = st['latefee'];
+  if (lf != null) {
+    a.lateFeeOn = lf['on'] != false;
+    final ld = _num(lf, 'days').toInt();
+    a.lateFeeDays = ld >= 1 ? ld : 1;
+  }
   final pm = st['paymethods']?['list'];
   for (final m in a.payMethods) {
     m.enabled = m.name == AppState.officePay;
@@ -788,7 +771,5 @@ void importRows(AppState a, Iterable<CRow> all) {
     }
   }
 
-  if (admin) a.closedForMaintenance = (name) => maint.closureOf(name) != null;
-  maint.changed();
   a.loaded = true;
 }

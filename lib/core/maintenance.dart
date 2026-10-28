@@ -1,8 +1,7 @@
-// Maintenance management for the administrator: preventive schedule, equipment list, maintenance staff
-// and repair assignment on grievances.
+// DEMO ONLY: maintenance management (preventive schedule, equipment list, maintenance staff, repair assignment).
 //
-// In the real app it is saved to the shared database like everything else (see cloud_codec.dart), so the
-// website shows the same data. In the demo build it only lives in memory until the page is closed.
+// Nothing here is saved to the database. The screens that use it are only shown in the demo build
+// (`--dart-define=DEMO=true`), and the data lives in memory until the page is closed.
 
 import 'package:flutter/foundation.dart';
 
@@ -13,9 +12,6 @@ import 'expenses.dart';
 class StaffMember {
   final int id;
   String name, role, phone;
-
-  /// Fields of the saved record that the app does not use. They are kept so that saving does not erase them.
-  Map<String, dynamic> extra = {};
   StaffMember(this.id, this.name, this.role, this.phone);
 }
 
@@ -28,7 +24,6 @@ class Equipment {
   bool closes; // when not working, the facility cannot be booked
   String vendor;
   DateTime? warranty; // warranty ends
-  Map<String, dynamic> extra = {}; // fields of the saved record that the app does not use
   Equipment(this.id, this.name, this.category, this.location, this.status, this.lastService,
       {this.facility = '', this.closes = false, this.vendor = '', this.warranty});
 }
@@ -53,7 +48,6 @@ class MTask {
   DateTime due;
   int? staffId;
   DateTime? lastDone;
-  Map<String, dynamic> extra = {}; // fields of the saved record that the app does not use (such as the history)
   MTask(this.id, this.title, this.every, this.days, this.due,
       {this.kind = 'Routine', this.equipId, this.equipLabel = '', this.staffId, this.lastDone});
 }
@@ -66,8 +60,7 @@ class Assignment {
   String notes, priority, completion;
   DateTime? resolvedOn;
   num cost;
-  String assignee, equipName; // the names as saved with the grievance (a resident cannot look up the staff list)
-  Assignment({this.staffId, this.target, this.equipId, this.notes = '', this.priority = 'Normal', this.completion = '', this.resolvedOn, this.cost = 0, this.assignee = '', this.equipName = ''});
+  Assignment({this.staffId, this.target, this.equipId, this.notes = '', this.priority = 'Normal', this.completion = '', this.resolvedOn, this.cost = 0});
 }
 
 /// Money spent on a repair or a maintenance job. It is also added to the Expenses list.
@@ -118,23 +111,24 @@ String _plural(int n, String w) => '$n $w${n == 1 ? '' : 's'}';
 }
 
 /// Holds the maintenance data of the demo. Use the single [maint] object.
+/// One notice the administrator sent to residents (shown under Recent notices).
+class NoticeLog {
+  final String title;
+  final DateTime at;
+  final int count, textCount, noPhone;
+  final bool everyone, text;
+  const NoticeLog(this.title, this.at, this.count, {this.everyone = false, this.text = false, this.textCount = 0, this.noPhone = 0});
+}
+
 class MaintenanceState extends ChangeNotifier {
   final List<StaffMember> staff = [];
   final List<Equipment> equipment = [];
   final List<MTask> tasks = [];
   final Map<int, Assignment> repairs = {}; // grievance id -> assignment
   final List<MaintCost> costs = [];
+  final List<NoticeLog> notices = [];
   int _seq = 1000;
-  // Ids are the time in milliseconds, like the website, so records made on either side never share an id.
-  int _next() {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    _seq = now > _seq ? now : _seq + 1;
-    return _seq;
-  }
-
-  /// Ids of the custom task types, by name (the saved record of a type needs one; the website uses it too).
-  final Map<String, int> kindIds = {};
-  int kindIdFor(String name) => kindIds.putIfAbsent(name, _next);
+  int _next() => ++_seq;
 
   void clear() {
     staff.clear();
@@ -142,8 +136,7 @@ class MaintenanceState extends ChangeNotifier {
     tasks.clear();
     repairs.clear();
     costs.clear();
-    customKinds.clear();
-    kindIds.clear();
+    notices.clear();
     notifyListeners();
   }
 
@@ -217,10 +210,9 @@ class MaintenanceState extends ChangeNotifier {
   AppState? appRef;
 
   /// Adds a cost to the maintenance record and to the Expenses list of the administrator.
-  void _recordCost(AppState app, String item, String category, num amount, Equipment? equip, String payee, DateTime date,
-      {int? grievanceId, int? taskId}) {
+  void _recordCost(AppState app, String item, String category, num amount, Equipment? equip, String payee, DateTime date) {
     if (amount <= 0) return;
-    final id = _next();
+    final id = DateTime.now().microsecondsSinceEpoch;
     costs.add(MaintCost(id, date, item, amount, equip?.id));
     app.expenses.add(Expense(
       id: id,
@@ -233,11 +225,6 @@ class MaintenanceState extends ChangeNotifier {
       qty: 1,
       unitPrice: amount,
       date: date,
-      link: {
-        if (equip != null) 'equipId': '${equip.id}',
-        if (grievanceId != null) 'grievanceId': grievanceId,
-        if (taskId != null) 'taskId': '$taskId',
-      },
     ));
     app.expenses.sort((x, y) => y.date.compareTo(x.date));
   }
@@ -277,18 +264,18 @@ class MaintenanceState extends ChangeNotifier {
     t.due = DateTime(now.year, now.month, now.day + t.days, 12);
     final e = equipById(t.equipId);
     if (e != null) e.lastService = now;
-    final hist = (t.extra['history'] is List ? List<dynamic>.from(t.extra['history'] as List) : <dynamic>[]);
-    hist.insert(0, {'date': dayKey(now), 'by': assigneeOf(t).isEmpty ? 'Office' : assigneeOf(t), 'note': '', 'cost': cost});
-    t.extra['history'] = hist.take(12).toList();
-    _recordCost(app, 'Maintenance: ${t.title}', 'Janitorial and maintenance', cost, e, assigneeOf(t), now, taskId: t.id);
+    _recordCost(app, 'Maintenance: ${t.title}', 'Janitorial and maintenance', cost, e, assigneeOf(t), now);
     app.logActivity('Maintenance done: ${t.title}${cost > 0 ? ' (${peso(cost)})' : ''}', 'Maintenance');
     app.changed();
     notifyListeners();
   }
 
-  /// Posts an announcement about a scheduled job to every resident.
-  void notifyResidents(AppState app, String title, String body) {
-    app.addAnnouncement(title, body, 'Maintenance', false);
+  /// Posts a notice to the chosen residents (or everyone) and keeps a record of who it reached.
+  /// [units] lists the units that can read it; empty means every resident.
+  void sendNotice(AppState app, String title, String body,
+      {required List<String> units, required int count, required bool text, required int textCount, required int noPhone, String type = 'Maintenance'}) {
+    app.addAnnouncement(title, body, type, text, units: units);
+    notices.insert(0, NoticeLog(title, DateTime.now(), count, everyone: units.isEmpty, text: text, textCount: textCount, noPhone: noPhone));
     notifyListeners();
   }
 
@@ -330,7 +317,6 @@ class MaintenanceState extends ChangeNotifier {
       if (k.toLowerCase() == name.toLowerCase() || kindLabel(k).toLowerCase() == name.toLowerCase()) return k;
     }
     customKinds.add(name);
-    kindIdFor(name);
     notifyListeners();
     return name;
   }
@@ -348,8 +334,6 @@ class MaintenanceState extends ChangeNotifier {
         }
       }
       customKinds[customKinds.indexOf(from)] = name;
-      final kid = kindIds.remove(from);
-      if (kid != null) kindIds[name] = kid;
       for (final t in tasks) {
         if (t.kind == from) t.kind = name;
       }
@@ -362,7 +346,6 @@ class MaintenanceState extends ChangeNotifier {
   /// Removes a custom type. Its tasks become routine maintenance.
   void deleteKind(String k, AppState app) {
     if (!customKinds.remove(k)) return;
-    kindIds.remove(k);
     for (final t in tasks) {
       if (t.kind == k) t.kind = kindRoutine;
     }
@@ -450,9 +433,7 @@ class MaintenanceState extends ChangeNotifier {
       a.staffId = null;
       a.target = null;
     }
-    a.assignee = who?.name ?? '';
     a.equipId = equip?.id;
-    a.equipName = equip?.name ?? '';
     a.notes = notes;
     repairs[g.id] = a;
     if (who != null && equip != null && equip.status == 'Working') equip.status = 'Under maintenance';
@@ -475,7 +456,7 @@ class MaintenanceState extends ChangeNotifier {
       e.status = 'Working';
       e.lastService = now;
     }
-    _recordCost(app, 'Repair: ${g.title}', 'Repairs and improvements', cost, e, staffById(a.staffId)?.name ?? '', now, grievanceId: g.id);
+    _recordCost(app, 'Repair: ${g.title}', 'Repairs and improvements', cost, e, staffById(a.staffId)?.name ?? '', now);
     app.logActivity('Complaint resolved: ${g.title}${cost > 0 ? ' (${peso(cost)})' : ''}', 'Requests');
     app.changed();
     notifyListeners();

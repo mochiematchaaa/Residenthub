@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/core.dart';
 import '../../widgets/widgets.dart';
+import 'my_record_card.dart';
 import 'resident_screens.dart';
 
 /// Resident dashboard (tab 1).
@@ -23,6 +24,14 @@ class ResHome extends StatelessWidget {
     final upcoming = app.upcomingBooking;
     final openGr = app.myGrievances.where((g) => g.stage < 2).length;
     final pendingBk = app.myBookings.where((b) => b.status == 'Pending').length;
+    final mySlot = app.slotOf(app.myUnit);
+    final parkDue = mySlot == null ? null : parkDueOf(mySlot);
+    final parkSoon = mySlot != null &&
+        parkDue != null &&
+        parkDue.soon &&
+        !app.leaveNotes.containsKey(app.myUnit) &&
+        app.renewProofOf(app.myUnit, mySlot.id) == null &&
+        app.walkinOf(app.myUnit, renew: true) == null;
 
     return TabPage(
       header: AppHeader(
@@ -32,7 +41,7 @@ class ResHome extends StatelessWidget {
         onAvatar: () => go(context, const ResSettings()),
         actions: [
           CircleBtn(Icons.search_rounded, tooltip: 'Search', onTap: () => showQuickSearch(context, _searchItems(context))),
-          CircleBtn(Icons.notifications_none_rounded, dot: true, tooltip: 'Notifications', onTap: () => showResNotifications(context)),
+          CircleBtn(Icons.notifications_none_rounded, badge: app.bellBadge(app.myBell), tooltip: 'Notifications', onTap: () => showResNotifications(context)),
         ],
       ),
       children: [
@@ -55,6 +64,37 @@ class ResHome extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+
+        if (parkSoon)
+          GestureDetector(
+            onTap: () => go(context, const ResParking()),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: toneOf(context, parkDue!.late ? Tone.bad : Tone.warn).bg, borderRadius: BorderRadius.circular(26)),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.two_wheeler_rounded, color: toneOf(context, parkDue!.late ? Tone.bad : Tone.warn).fg),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(parkDue!.late ? 'Your parking rental has ended or is due now' : 'Your parking rental is almost up',
+                            style: TextStyle(fontWeight: FontWeight.w800, color: toneOf(context, parkDue!.late ? Tone.bad : Tone.warn).fg)),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Slot ${mySlot!.id} runs until ${isoShort(parkDue!.until)}. The next payment is due ${isoShort(parkDue!.nextDue)} (${parkDaysText(parkDue!.days)}). '
+                          'Did you forget, or do you no longer plan to rent? Renew to keep your slot, or tell the office. Tap to open Parking.',
+                          style: TextStyle(color: toneOf(context, parkDue!.late ? Tone.bad : Tone.warn).fg, fontSize: 12.5, height: 1.35),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
 
@@ -122,6 +162,9 @@ class ResHome extends StatelessWidget {
             ),
           ),
         ),
+
+        // --- household record kept by the office
+        const MyRecordCard(),
 
         // --- quick access tiles
         DashSection(

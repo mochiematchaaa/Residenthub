@@ -161,7 +161,8 @@ final Map<String, ImportSpec> importSpecs = {
         final now = DateTime.now();
         app.setAccounts([
           ...app.trusted,
-          Account('imp-${now.microsecondsSinceEpoch}', v['name']!.trim(), email, ph, u.unit, 'Resident', shortDate(now)),
+          Account('imp-${now.microsecondsSinceEpoch}', v['name']!.trim(), email, ph, u.unit, 'Resident', shortDate(now),
+              createdAt: now, updatedAt: now, lastChange: 'New account', history: [AccountChange(now, 'Account created')]),
         ]);
         run.passwords.add([v['name']!.trim(), u.unit, email, 'Temp#Pass1x']);
         return null;
@@ -399,6 +400,108 @@ final Map<String, ImportSpec> importSpecs = {
       if (v['tel']!.isEmpty) return 'No number';
       if (directoryContacts.any((c) => c.name.toLowerCase() == v['name']!.toLowerCase() && _nk(c.tel) == _nk(v['tel']!))) return 'Already in the directory';
       app.setDirectory([...directoryContacts, ContactInfo(v['name']!, v['note']!, v['tel']!)], [for (final r in houseRules) [...r]]);
+      return null;
+    },
+  ),
+  'mtasks': ImportSpec(
+    'mtasks',
+    'maintenance tasks',
+    const [
+      ImportCol('title', 'Task', ['task', 'title', 'maintenance task', 'job', 'work', 'activity'], req: true),
+      ImportCol('due', 'Next due date', ['next due', 'due', 'due date', 'date', 'schedule date'], req: true),
+      ImportCol('every', 'How often', ['frequency', 'every', 'how often', 'interval', 'repeat']),
+      ImportCol('kind', 'Type (Routine, Compliance or your own)', ['type', 'kind', 'category']),
+      ImportCol('equip', 'Equipment', ['equipment', 'asset', 'machine', 'for']),
+      ImportCol('who', 'Assigned to', ['assigned to', 'assigned', 'staff', 'person', 'technician', 'in charge']),
+    ],
+    const [
+      ['Generator test run', 'Nov 10, 2026', 'Monthly', 'Routine', 'Standby generator', 'Dante Villanueva'],
+    ],
+    (v, run) async {
+      if (v['title']!.isEmpty) return 'No task';
+      if (v['due']!.isEmpty) return 'No due date';
+      final d = importDate(v['due']!);
+      if (d == null) return 'Due date is not understood';
+      if (maint.tasks.any((t) => t.title.toLowerCase() == v['title']!.toLowerCase() && t.due.year == d.year && t.due.month == d.month && t.due.day == d.day)) {
+        return 'Already scheduled';
+      }
+      final e = v['every']!.toLowerCase();
+      String every = 'Monthly';
+      if (RegExp('week').hasMatch(e)) {
+        every = RegExp('2|two|bi|fort').hasMatch(e) ? 'Every 2 weeks' : 'Weekly';
+      } else if (RegExp('quarter|3 ?month|three month').hasMatch(e)) {
+        every = 'Every 3 months';
+      } else if (RegExp('semi|6 ?month|six month|half').hasMatch(e)) {
+        every = 'Every 6 months';
+      } else if (RegExp('year|annual|12 ?month').hasMatch(e)) {
+        every = 'Yearly';
+      } else if (RegExp('daily|day').hasMatch(e)) {
+        every = 'Weekly';
+      }
+      final k = v['kind']!.toLowerCase();
+      var kind = kindRoutine;
+      if (RegExp('compliance|permit|certificate|test|inspection').hasMatch(k) && !k.contains('routine')) {
+        kind = kindCompliance;
+      } else if (k.isNotEmpty && !RegExp('routine|regular|preventive').hasMatch(k)) {
+        kind = maint.addKind(v['kind']!) ?? kindRoutine;
+      }
+      Equipment? equip;
+      for (final x in maint.equipment) {
+        if (x.name.toLowerCase() == v['equip']!.toLowerCase()) equip = x;
+      }
+      StaffMember? who;
+      for (final x in maint.staff) {
+        if (x.name.toLowerCase() == v['who']!.toLowerCase()) who = x;
+      }
+      maint.saveTask(app, title: v['title']!, kind: kind, every: every, due: DateTime(d.year, d.month, d.day, 12), equip: equip, who: who);
+      return null;
+    },
+  ),
+  'equipment': ImportSpec(
+    'equipment',
+    'equipment',
+    const [
+      ImportCol('name', 'Name', ['name', 'equipment', 'asset', 'item'], req: true),
+      ImportCol('category', 'Category', ['category', 'type']),
+      ImportCol('location', 'Location', ['location', 'where', 'area']),
+      ImportCol('status', 'Condition (Working, Needs repair, Under maintenance)', ['condition', 'status']),
+      ImportCol('vendor', 'Supplier or service company', ['supplier', 'vendor', 'service company', 'contractor']),
+      ImportCol('warranty', 'Warranty ends', ['warranty', 'warranty ends', 'warranty until']),
+    ],
+    const [
+      ['Elevator A', 'Elevator', 'Main lobby', 'Working', 'Otis Services', 'Dec 31, 2027'],
+    ],
+    (v, run) async {
+      if (v['name']!.isEmpty) return 'No name';
+      if (maint.equipment.any((x) => x.name.toLowerCase() == v['name']!.toLowerCase())) return 'Already on the list';
+      final w = v['warranty']!.isEmpty ? null : importDate(v['warranty']!);
+      maint.saveEquipment(app,
+          name: v['name']!,
+          category: _pick(equipmentCategories, v['category']!, 'Other'),
+          location: v['location']!,
+          status: _pick(equipmentStatuses, v['status']!, 'Working'),
+          facility: '',
+          closes: false,
+          vendor: v['vendor']!,
+          warranty: w);
+      return null;
+    },
+  ),
+  'staff': ImportSpec(
+    'staff',
+    'maintenance staff',
+    const [
+      ImportCol('name', 'Name', ['name', 'staff', 'full name', 'employee'], req: true),
+      ImportCol('role', 'Role', ['role', 'position', 'job', 'title', 'trade']),
+      ImportCol('phone', 'Mobile number', ['mobile', 'phone', 'contact', 'contact number', 'mobile number']),
+    ],
+    const [
+      ['Dante Villanueva', 'Electrician', '0917 555 0199'],
+    ],
+    (v, run) async {
+      if (v['name']!.isEmpty) return 'No name';
+      if (maint.staff.any((x) => x.name.toLowerCase() == v['name']!.toLowerCase())) return 'Already on the list';
+      maint.saveStaff(app, name: v['name']!, role: v['role']!, phone: _fixPhone(v['phone']!));
       return null;
     },
   ),

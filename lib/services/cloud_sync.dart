@@ -31,8 +31,6 @@ final GlobalKey<ScaffoldMessengerState> rootMessengerKey = GlobalKey<ScaffoldMes
 const _kinds = [
   'unit', 'statusUpdate', 'booking', 'grievance', 'proof', 'request', 'rsvp', 'vote', 'activity',
   'due', 'payment', 'expense', 'announcement', 'event', 'poll', 'doc', 'slot', 'setting',
-  // maintenance (only the administrator can read most of these; the database decides)
-  'staff', 'equipment', 'mtask', 'mtype', 'mclosure',
 ];
 
 /// Loads and saves data to Supabase and listens for live changes.
@@ -66,7 +64,6 @@ class CloudSync extends ChangeNotifier {
     final run = ++_run;
     _set(CloudState.connecting, 'Connecting…');
     app.addListener(_schedulePush);
-    maint.addListener(_schedulePush);
     _channel = _client
         .channel('residenthub-records-$run')
         .onPostgresChanges(
@@ -94,7 +91,6 @@ class CloudSync extends ChangeNotifier {
   Future<void> end() async {
     _run++;
     app.removeListener(_schedulePush);
-    maint.removeListener(_schedulePush);
     _pushTimer?.cancel();
     _retryTimer?.cancel();
     _refreshTimer?.cancel();
@@ -107,7 +103,6 @@ class CloudSync extends ChangeNotifier {
     _pulling = false;
     _known.clear();
     _synced.clear();
-    maint.clear();
     if (ch != null) {
       try {
         await _client.removeChannel(ch);
@@ -178,7 +173,11 @@ class CloudSync extends ChangeNotifier {
 
 
   /// What a resident may change on a unit record (the database refuses anything else).
-  static const _residentUnitKeys = ['usage', 'usageStatus', 'usageRemark', 'usageInfo', 'status', 'statusNote', 'statusDate'];
+  static const _residentUnitKeys = [
+    'usage', 'usageStatus', 'usageRemark', 'usageInfo', 'status', 'statusNote', 'statusDate',
+    // the household details a resident keeps up to date themselves
+    'residents', 'members', 'pets', 'vehicles', 'emergencyName', 'emergencyRelation', 'emergencyPhone', 'selfUpdated', 'selfBy',
+  ];
 
   /// A unit written on the website may leave out fields the app fills in with a default (name,
   /// contact, type...). Those are not changes, so leave the defaults out when comparing.

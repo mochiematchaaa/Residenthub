@@ -56,9 +56,6 @@ class Expense {
   final String item, category, area, payee, receiptNo, note;
   final num qty, unitPrice;
   final DateTime date;
-
-  /// Set when the purchase is a repair or maintenance job: the equipment, grievance or task it belongs to.
-  final Map<String, dynamic> link;
   const Expense({
     required this.id,
     required this.item,
@@ -70,7 +67,6 @@ class Expense {
     required this.qty,
     required this.unitPrice,
     required this.date,
-    this.link = const {},
   });
 
   /// Total paid for this purchase.
