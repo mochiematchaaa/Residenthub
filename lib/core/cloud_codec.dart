@@ -543,7 +543,6 @@ List<CRow> exportRows(AppState a) {
   add('setting', 'reminders', '', {
     for (final k in remKinds) k: {'on': a.remOf(k).on ? 'yes' : 'no', 'days': a.remOf(k).days, 'freq': a.remOf(k).freq, 'msg': a.remOf(k).msg},
   });
-  add('setting', 'autobill', '', {'on': a.autoBillOn ? 'yes' : 'no'});
   add('setting', 'paycheck', '', {'pct': a.latePct});
   add('setting', 'latefee', '', {'on': a.lateFeeOn ? 'yes' : 'no', 'days': a.lateFeeDays});
   add('setting', 'paymethods', '', {
@@ -693,8 +692,6 @@ void importRows(AppState a, Iterable<CRow> all) {
     final h = _num(ap, 'hours').toInt();
     a.autoPostHours = h > 0 ? h : 24;
   }
-  final ab = st['autobill'];
-  a.autoBillOn = ab == null ? kDemo : _flag(ab['on'], kDemo);
   final rm = st['reminders'];
   for (final k in remKinds) {
     final c = rm?[k];
