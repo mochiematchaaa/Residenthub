@@ -6,19 +6,20 @@ import '../../core/core.dart';
 import '../../services/texting.dart';
 import '../../widgets/widgets.dart';
 
-/// Opens the Notify residents popup.
-void showNotifySheet(BuildContext context) {
+/// Opens the Notify residents popup. With a maintenance [task] the title and message are filled in for you.
+void showNotifySheet(BuildContext context, [MTask? task]) {
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (_) => _NotifySheet(parent: context),
+    builder: (_) => _NotifySheet(parent: context, task: task),
   );
 }
 
 class _NotifySheet extends StatefulWidget {
   final BuildContext parent;
-  const _NotifySheet({required this.parent});
+  final MTask? task;
+  const _NotifySheet({required this.parent, this.task});
 
   @override
   State<_NotifySheet> createState() => _NotifySheetState();
@@ -34,8 +35,13 @@ class _NotifySheetState extends State<_NotifySheet> {
   @override
   void initState() {
     super.initState();
-    title = TextEditingController();
-    body = TextEditingController();
+    final t = widget.task;
+    final equip = t == null ? '' : maint.equipOf(t);
+    title = TextEditingController(text: t == null ? '' : 'Maintenance notice: ${t.title}');
+    body = TextEditingController(
+        text: t == null
+            ? ''
+            : 'Scheduled on ${shortDate(t.due)}: ${t.title}${equip.isEmpty ? '' : ' ($equip)'}. Some areas may be briefly unavailable. Thank you for your understanding.');
     search = TextEditingController();
   }
 
@@ -65,7 +71,8 @@ class _NotifySheetState extends State<_NotifySheet> {
     if (text && phones.isEmpty) return setState(() => error = 'None of these residents has a mobile number on file. Turn off the text message or choose other residents.');
     final units = everyone ? <String>[] : rec.map((a) => a.unit).toSet().toList();
     final msgBody = body.text.trim();
-    app.addAnnouncement(t, msgBody, 'General', text, units: units);
+    maint.sendNotice(app, t, msgBody,
+        units: units, count: rec.length, text: text, textCount: phones.length, noPhone: rec.length - phones.length);
     final parent = widget.parent;
     Navigator.pop(context);
     if (text) {

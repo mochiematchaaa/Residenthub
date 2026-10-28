@@ -7,6 +7,7 @@ import '../../services/session.dart';
 import '../../widgets/widgets.dart';
 import '../shared/import_sheet.dart';
 import '../shared/notify_sheet.dart';
+import 'unit_history_screen.dart';
 
 class AdminAccess extends StatefulWidget {
   const AdminAccess({super.key});
@@ -66,6 +67,20 @@ class _AdminAccessState extends State<AdminAccess> {
             ),
             _ContactSummary(),
             RCard(
+              child: Row(children: [
+                const IconBadge(Icons.badge_outlined, accent: true),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('Looking for resident records?', style: TextStyle(fontWeight: FontWeight.w800)),
+                    Text('This list only controls who can sign in. Each unit\'s household record lives under Resident profiles.', style: TextStyle(color: muted(context), fontSize: 12.5, height: 1.3)),
+                    const SizedBox(height: 6),
+                    TextButton(onPressed: () => go(context, const UnitHistoryScreen()), child: const Text('Open Resident profiles')),
+                  ]),
+                ),
+              ]),
+            ),
+            RCard(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
                 children: [
@@ -102,6 +117,7 @@ class _AdminAccessState extends State<AdminAccess> {
                                 Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
                                   Text(t.name, style: const TextStyle(fontWeight: FontWeight.w700)),
                                   if (t.isNew()) const Pill('New', tone: Tone.good),
+                                  if (t.isUpdated()) Pill('Updated: ${t.lastChange.isEmpty ? 'info' : t.lastChange}', tone: Tone.info),
                                 ]),
                                 Text(t.email, style: TextStyle(color: muted(context), fontSize: 12.5)),
                                 Text('${t.phone.isEmpty ? 'No mobile number' : t.phone}${t.unit.isNotEmpty ? ' · ${t.unit}' : ''}${t.added.isEmpty ? '' : ' · Added ${t.added}'}', style: TextStyle(color: t.hasMobile ? muted(context) : danger, fontSize: 12)),
@@ -118,7 +134,19 @@ class _AdminAccessState extends State<AdminAccess> {
                           ),
                         ],
                       ),
+                      _HistoryDropdown(t),
                       const SizedBox(height: 10),
+                      if (t.unit.isNotEmpty) ...[
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () => go(context, UnitHistoryScreen(unit: t.unit)),
+                            icon: const Icon(Icons.badge_outlined),
+                            label: const Text('Profile'),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
@@ -210,22 +238,58 @@ class _ContactSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final res = app.residentAccounts;
     final fresh = res.where((a) => a.isNew()).length;
+    final upd = res.where((a) => a.isUpdated()).length;
     final noPhone = res.where((a) => !a.hasMobile).length;
     return RCard(
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Resident contact info', style: hd(15)),
+          Text('Resident contact info, last 7 days', style: hd(15)),
           const SizedBox(height: 8),
           Wrap(spacing: 8, runSpacing: 6, children: [
-            Pill('$fresh new in the last 7 days', tone: fresh > 0 ? Tone.good : Tone.info),
+            Pill('$fresh new', tone: fresh > 0 ? Tone.good : Tone.info),
+            Pill('$upd updated', tone: Tone.info),
             if (noPhone > 0) Pill('$noPhone without a mobile number', tone: Tone.warn),
           ]),
           const SizedBox(height: 8),
           Text('Notify residents uses this list: the name, unit and mobile number come from each account.', style: TextStyle(color: muted(context), fontSize: 12.5, height: 1.4)),
           const SizedBox(height: 8),
           OutlinedButton.icon(onPressed: () => showNotifySheet(context), icon: const Icon(Icons.campaign_outlined), label: const Text('Notify residents')),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small dropdown under a resident's contact line that lists every change to their account, newest first.
+class _HistoryDropdown extends StatelessWidget {
+  final Account a;
+  const _HistoryDropdown(this.a);
+
+  @override
+  Widget build(BuildContext context) {
+    if (a.history.isEmpty) return const SizedBox.shrink();
+    final list = [...a.history]..sort((x, y) => y.at.compareTo(x.at));
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: 4),
+        dense: true,
+        title: Text('Update history (${list.length})', style: TextStyle(color: muted(context), fontSize: 13, fontWeight: FontWeight.w600)),
+        children: [
+          for (final c in list)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text.rich(TextSpan(children: [
+                  TextSpan(text: '${shortDate(c.at)} · ', style: TextStyle(color: muted(context))),
+                  TextSpan(text: c.from.isEmpty && c.to.isEmpty ? c.field : '${c.field}: ${c.from.isEmpty ? '—' : c.from} → ${c.to}'),
+                ]), style: const TextStyle(fontSize: 13, height: 1.35)),
+              ),
+            ),
         ],
       ),
     );

@@ -12,7 +12,7 @@ import 'screens/auth/new_password_screen.dart';
 import 'screens/auth/verify_contact_screen.dart';
 import 'screens/resident/resident_screens.dart';
 import 'services/cloud_sync.dart' show cloud, CloudState, rootMessengerKey;
-import 'services/demo.dart' show kDemo;
+import 'services/demo.dart' show kDemo, kPrototype;
 import 'services/session.dart';
 import 'widgets/widgets.dart';
 
@@ -51,7 +51,7 @@ class ResidentHubApp extends StatelessWidget {
           home = const ResidentShell(key: ValueKey('resident'));
         }
         return MaterialApp(
-          title: kDemo ? 'ResidentHub Demo' : 'ResidentHub',
+          title: kDemo && !kPrototype ? 'ResidentHub Demo' : 'ResidentHub',
           scaffoldMessengerKey: rootMessengerKey,
           debugShowCheckedModeBanner: false,
           theme: buildTheme(Brightness.light),
@@ -93,9 +93,10 @@ class ResidentHubApp extends StatelessWidget {
               ),
             );
           },
+          // The language is part of the key, so the screens are rebuilt in the new language.
           home: AnimatedSwitcher(
             duration: const Duration(milliseconds: 350),
-            child: home,
+            child: KeyedSubtree(key: ValueKey('${home.key}-${app.lang}'), child: home),
           ),
         );
       },

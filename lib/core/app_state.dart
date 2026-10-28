@@ -10,8 +10,9 @@ import 'community.dart';
 import 'doc_model.dart';
 import 'doc_seed.dart';
 import 'expenses.dart';
-import 'maintenance.dart';
 import 'payments.dart';
+import 'reminders.dart';
+import 'rich_text.dart';
 import 'usage_forms.dart';
 
 part 'cloud_codec.dart';
@@ -31,6 +32,19 @@ const _months = [
   'January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December'
 ];
+/// "Oct 28, 3:20 PM"
+String clockText(DateTime d) {
+  final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  return '${_months[d.month - 1].substring(0, 3)} ${d.day}, $h:${d.minute.toString().padLeft(2, '0')} ${d.hour < 12 ? 'AM' : 'PM'}';
+}
+
+/// "5h 12m", "45 min", "2 days", or "now".
+String waitText(Duration d) {
+  if (d.inSeconds <= 60) return 'now';
+  final m = d.inMinutes, h = m ~/ 60;
+  if (h >= 48) return '${(h / 24).round()} days';
+  return h > 0 ? '${h}h ${m % 60}m' : '$m min';
+}
 String longDate(DateTime d) => '${_months[d.month - 1]} ${d.day}, ${d.year}';
 String shortDate(DateTime d) =>
     '${_months[d.month - 1].substring(0, 3)} ${d.day}, ${d.year}';
@@ -66,9 +80,30 @@ class Unit {
 
   /// The details the resident gave for this way of using the unit (see usage_forms.dart).
   Map<String, String> usageInfo;
+
+  /// Floor area in square meters. Monthly dues are the area times the rate per sqm (0 = not set yet).
+  num area;
+
+  /// The day of the month this unit's dues are due (1 to 31, 0 = not set). Units differ, so payments come in all month.
+  int dueDay;
   Unit(this.unit, this.name, this.type, this.status, this.contact, this.usage,
-      {this.statusNote = '', this.statusDate = '', this.usageStatus = '', this.usageRemark = '', Map<String, String>? usageInfo})
+      {this.statusNote = '', this.statusDate = '', this.usageStatus = '', this.usageRemark = '', this.area = 0, this.dueDay = 0, Map<String, String>? usageInfo})
       : usageInfo = usageInfo ?? {};
+
+  /// The household record the office keeps (shown to the resident on their dashboard).
+  String email = '', moveIn = '', members = '', pets = '', vehicles = '';
+  String emergencyName = '', emergencyRelation = '', emergencyPhone = '';
+
+  /// Shown to the resident / kept private for the office.
+  String noteResident = '', noteOffice = '', profileBy = '';
+  int residents = 0;
+
+  /// When the office last saved the record (milliseconds, 0 = never).
+  int profileUpdated = 0;
+
+  /// When the resident last edited their own household details, and who did it.
+  int selfUpdated = 0;
+  String selfBy = '';
 
   /// Short-term rentals and home businesses need the administrator's approval.
   bool get needsApproval => usage == 'shortterm' || usage == 'business';
@@ -88,15 +123,34 @@ class ActivityEntry {
   const ActivityEntry(this.title, this.area, this.at);
 }
 
+/// The result of checking a payment a resident sent: [why] lists what does not match (empty = clean).
+class ProofCheck {
+  final List<String> why;
+  final num? expected;
+  final Due? due;
+
+  /// One short line per thing the office looks at (amount, reference, charge, photo). ok: true good, false bad, null neutral.
+  final List<CheckItem> checks;
+  const ProofCheck(this.why, this.expected, this.due, [this.checks = const []]);
+  bool get ok => why.isEmpty;
+}
+
+class CheckItem {
+  final bool? ok;
+  final String label;
+  const CheckItem(this.ok, this.label);
+}
+
 /// A facility booking (place, day, time, status Pending/Approved/Denied).
 class Booking {
   final int id;
-  final String who, unit, place, when;
+  final String who, unit, place;
+  String when;
   String status; // Pending | Approved | Denied | Completed
 
   /// The day it is for (yyyy-mm-dd) and the time slot number, so two units cannot book the same slot.
   final String day;
-  final int slot;
+  int slot;
   Booking(this.id, this.who, this.unit, this.place, this.when, this.status,
       {this.day = '', this.slot = -1});
 }
@@ -104,14 +158,69 @@ class Booking {
 /// One charge billed to a unit: monthly association dues, a damage fee, and so on.
 class Due {
   final int id;
-  final String unit, name, note;
-  final num amount;
+  final String unit, name;
+  String note;
+  num amount;
 
   /// Due date written like "Oct 15, 2026" (empty = due upon receipt).
   String dueDate;
   bool paid;
-  Due(this.id, this.unit, this.name, this.amount, this.note, {this.dueDate = '', this.paid = false});
+
+  /// The day the office billed (uploaded) this charge, like "Oct 1, 2026".
+  String billedOn;
+
+  /// For monthly dues: the unit's floor area and the rate per sqm used (0 for other charges).
+  num area, rate;
+
+  /// The last day the office sent a reminder for this charge, and how many were sent.
+  String remindedOn;
+  int reminders;
+
+  /// The message the office wrote for the last reminder (shown to the resident).
+  String remindMsg;
+
+  /// "Did they pay?" bookkeeping. checkedAt = when the office last answered "No" (milliseconds, 0 = never) and checkedNo that day;
+  /// lateFeeId = the late charge added for this charge; partOf = the full amount when only part was paid;
+  /// balanceOf = the charge this one is the unpaid balance of; lateFor = the charge this late charge belongs to.
+  int checkedAt, lateFeeId, balanceOf, lateFor;
+  String checkedNo;
+  num partOf;
+
+  /// When the last reminder was sent (milliseconds, 0 = only the day is known), and whether the late charge was added by the system.
+  int remindedAt;
+  bool lateFeeAuto;
+  Due(this.id, this.unit, this.name, this.amount, this.note,
+      {this.dueDate = '', this.paid = false, this.billedOn = '', this.area = 0, this.rate = 0, this.remindedOn = '', this.reminders = 0, this.remindMsg = '',
+      this.checkedAt = 0, this.lateFeeId = 0, this.balanceOf = 0, this.lateFor = 0, this.checkedNo = '', this.partOf = 0,
+      this.remindedAt = 0, this.lateFeeAuto = false});
   num get amt => amount;
+
+  /// When the last reminder went out, in milliseconds (0 = never).
+  int get remindedMs => remindedAt > 0 ? remindedAt : (parseShortDate(remindedOn)?.add(const Duration(hours: 9)).millisecondsSinceEpoch ?? 0);
+
+  /// "Reminded Oct 27, 4:30 PM · 2 times", or '' when nobody was reminded.
+  String get remindedLabel {
+    if (remindedMs == 0) return '';
+    final when = remindedAt > 0 ? clockText(DateTime.fromMillisecondsSinceEpoch(remindedAt)) : remindedOn;
+    return 'Reminded $when${reminders > 1 ? ' · $reminders times' : ''}';
+  }
+
+  bool remindedWithin(int hours) => remindedMs > 0 && DateTime.now().millisecondsSinceEpoch - remindedMs < hours * 3600000;
+
+  /// Days since the due date (0 = due today). Null when paid or there is no due date.
+  int? get daysLate {
+    if (paid) return null;
+    final x = parseShortDate(dueDate);
+    if (x == null) return null;
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day).difference(DateTime(x.year, x.month, x.day)).inDays;
+  }
+
+  /// The day it was billed. Older charges without it use the time stored in their id.
+  String get billed {
+    if (billedOn.isNotEmpty) return billedOn;
+    return id > 1000000000000 ? shortDate(DateTime.fromMillisecondsSinceEpoch(id)) : '';
+  }
   bool get isCharge => true;
   String get label => note;
 
@@ -121,6 +230,13 @@ class Due {
     final d = parseShortDate(dueDate);
     return d != null && DateTime.now().isAfter(d.add(const Duration(days: 1)));
   }
+}
+
+/// A unit's monthly dues (floor area x rate per sqm) with the totals billed and paid so far.
+class UnitDues {
+  final num area, rate, monthly, billed, paid;
+  const UnitDues(this.area, this.rate, this.monthly, this.billed, this.paid);
+  num get balance => billed - paid;
 }
 
 /// One month in the dues list: month, amount, due date and status.
@@ -188,10 +304,7 @@ class Account {
       : history = history ?? [];
 
   /// "New" if the account was created in the last [days] days.
-  bool isNew([int days = 7]) {
-    final c = createdAt ?? parseShortDate(added);
-    return c != null && DateTime.now().difference(c).inDays < days;
-  }
+  bool isNew([int days = 7]) => createdAt != null && DateTime.now().difference(createdAt!).inDays < days;
 
   /// True if the contact info changed in the last [days] days (and the account is not just new).
   bool isUpdated([int days = 7]) => !isNew(days) && updatedAt != null && DateTime.now().difference(updatedAt!).inDays < days;
@@ -212,7 +325,11 @@ class SessionInfo {
   final int id;
   final String device, location, when;
   final bool current;
-  SessionInfo(this.id, this.device, this.location, this.when, this.current);
+
+  /// 'computer', 'phone' or 'tablet' (decides the icon). [sample] marks demo entries of the prototype.
+  final String kind;
+  final bool sample;
+  SessionInfo(this.id, this.device, this.location, this.when, this.current, {this.kind = 'computer', this.sample = false});
 }
 
 /// A resident's request for a parking slot.
@@ -222,12 +339,12 @@ class ParkingReq {
 
   /// The slot the resident picked on the map ('' for an older request without one), and the
   /// monthly rental that was charged when they picked it.
-  final String slot;
-  final num amount;
+  String slot;
+  num amount;
 
   /// 'month' or 'day', and the number of days for a daily rental (0 for monthly).
-  final String plan;
-  final int days;
+  String plan;
+  int days;
 
   /// Shown to the administrator ("Just now", "2 days ago") and used to keep requests in order.
   final String when;
@@ -282,6 +399,40 @@ class AppState extends ChangeNotifier {
 
   /// Called by the sync after it has changed the data.
   void changed() => _n();
+
+  /// Language of the menus and titles: 'en' or 'fil' (see core/i18n.dart).
+  String lang = 'en';
+  void setLang(String code) {
+    lang = code == 'fil' ? 'fil' : 'en';
+    _n();
+  }
+
+  /// Settings > Devices: the alert for a new sign-in, and when the password was last changed here.
+  bool newDeviceAlert = true;
+  DateTime? passwordChangedAt;
+  void setNewDeviceAlert(bool v) {
+    newDeviceAlert = v;
+    _n();
+  }
+
+  /// Signs out one of the other devices (this device is signed out with session.signOut()).
+  void signOutSession(int id) {
+    sessions = [for (final s in sessions) if (s.id != id || s.current) s];
+    _n();
+  }
+
+  /// Signs out every device except this one.
+  void signOutOtherSessions() {
+    sessions = [for (final s in sessions) if (s.current) s];
+    _n();
+  }
+
+  /// Called after the password was changed from Settings.
+  void passwordChangedNow({bool signOutOthers = false}) {
+    passwordChangedAt = DateTime.now();
+    if (signOutOthers) sessions = [for (final s in sessions) if (s.current) s];
+    _n();
+  }
 
   /// Switches dark mode.
   void toggleDark() {
@@ -369,6 +520,13 @@ class AppState extends ChangeNotifier {
     };
   }
 
+  static String _deviceKind() => kIsWeb
+      ? 'computer'
+      : switch (defaultTargetPlatform) {
+          TargetPlatform.android || TargetPlatform.iOS => 'phone',
+          _ => 'computer',
+        };
+
   static String _clock(DateTime t) {
     final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
     return '$h:${t.minute.toString().padLeft(2, '0')} ${t.hour >= 12 ? 'PM' : 'AM'}';
@@ -398,7 +556,14 @@ class AppState extends ChangeNotifier {
     } else {
       me = ResidentUser(name.trim().isEmpty ? email : name.trim(), unit, email, phone);
     }
-    sessions = [SessionInfo(1, _deviceLabel(), 'Signed in at ${_clock(DateTime.now())}', 'Active now', true)];
+    sessions = [
+      SessionInfo(1, _deviceLabel(), 'Signed in at ${_clock(DateTime.now())}', 'Active now', true, kind: _deviceKind()),
+      // The prototype has no real list of sessions, so two sample devices let you try the buttons.
+      if (const bool.fromEnvironment('PROTOTYPE')) ...[
+        SessionInfo(2, 'Android phone · Chrome', 'Quezon City', '2 days ago', false, kind: 'phone', sample: true),
+        SessionInfo(3, 'iPad · Safari', 'Quezon City', '9 days ago', false, kind: 'tablet', sample: true),
+      ],
+    ];
     resTab = 0;
     adminTab = 0;
     booting = false;
@@ -441,6 +606,8 @@ class AppState extends ChangeNotifier {
     role = null;
     me = null;
     userId = '';
+    sessions = [];
+    passwordChangedAt = null;
     mustChangePassword = false;
     contactVerified = true;
     resTab = 0;
@@ -457,6 +624,7 @@ class AppState extends ChangeNotifier {
     newStatusUpdates = 0;
     blocked.clear();
     blockedDay = '';
+    fblocks.clear();
     amenities
       ..clear()
       ..addAll(Amenity.defaults());
@@ -464,6 +632,7 @@ class AppState extends ChangeNotifier {
     dues.clear();
     motorRate = 0;
     motorRateDay = 0;
+    parkSizesSaved = [];
     duesRate = 0;
     parking.clear();
     slots.clear();
@@ -475,7 +644,18 @@ class AppState extends ChangeNotifier {
     announcements.clear();
     events.clear();
     polls.clear();
-    _votes.clear();
+    walkins.clear();
+    leaveNotes.clear();
+    book.clear();
+    remParking = RemCfg(days: 5, freq: 'every');
+    remDues = RemCfg(days: 2, freq: 'daily');
+    parkSoonDays = 5;
+    autoBillOn = true;
+    smsLog.clear();
+    _ballots.clear();
+    pollCats
+      ..clear()
+      ..addAll(pollBuiltInCategories);
     _rsvps.clear();
     activityLog.clear();
     trusted.clear();
@@ -497,14 +677,14 @@ class AppState extends ChangeNotifier {
   int newStatusUpdates = 0; // resident updates the admin has not opened yet
 
   /// Admin: adds a unit. The unit name is what ties accounts, charges and bookings together.
-  String? addUnit(String unitRaw, String household, String type, String contact) {
+  String? addUnit(String unitRaw, String household, String type, String contact, {num area = 0, int dueDay = 0}) {
     var label = unitRaw.trim().replaceAll(RegExp(r'\s+'), ' ');
     if (label.isEmpty) return 'Enter the unit name, e.g. Unit 12A.';
     if (!label.toLowerCase().startsWith('unit ')) label = 'Unit $label';
     label = 'Unit ${label.substring(5).trim().toUpperCase()}';
     if (units.any((u) => u.unit.toLowerCase() == label.toLowerCase())) return '$label already exists.';
     units.add(Unit(label, household.trim().isEmpty ? '—' : household.trim(), type,
-        'Occupied', contact.trim().isEmpty ? '—' : contact.trim(), 'owner'));
+        'Occupied', contact.trim().isEmpty ? '—' : contact.trim(), 'owner', area: area, dueDay: dueDay));
     units.sort((a, b) => naturalCompare(a.unit, b.unit));
     logActivity('Unit added: $label', 'Units');
     _n();
@@ -512,12 +692,43 @@ class AppState extends ChangeNotifier {
   }
 
   /// Admin: edits the household details of a unit.
-  void updateUnit(Unit u, String household, String type, String contact) {
+  void updateUnit(Unit u, String household, String type, String contact, {num? area, int? dueDay}) {
+    if (area != null) u.area = area;
+    if (dueDay != null) u.dueDay = dueDay;
     u.name = household.trim().isEmpty ? '—' : household.trim();
     u.type = type;
     u.contact = contact.trim().isEmpty ? '—' : contact.trim();
     _n();
   }
+
+  /// Admin: sets a unit's floor area. When [recalc] is true the unit's unpaid monthly dues are worked out again
+  /// with the new size (area × the current rate per sqm). Returns an error text, or null.
+  String? setUnitArea(Unit u, String raw, {bool recalc = true, String dueDayRaw = ''}) {
+    final a = double.tryParse(raw.trim().replaceAll(',', ''));
+    if (a == null || a <= 0) return 'Enter the floor area in square meters, e.g. 45.';
+    var day = 0;
+    if (dueDayRaw.trim().isNotEmpty) {
+      day = int.tryParse(dueDayRaw.trim()) ?? 0;
+      if (day < 1 || day > 31) return 'The due day is a day of the month from 1 to 31.';
+    }
+    u.area = a;
+    u.dueDay = day;
+    var n = 0;
+    if (recalc && duesRate > 0) {
+      for (final d in dues.where((d) => d.unit == u.unit && !d.paid && d.area > 0 && d.rate > 0)) {
+        d.area = a;
+        d.rate = duesRate;
+        d.amount = (a * duesRate * 100).round() / 100;
+        n++;
+      }
+    }
+    lastRecalcCount = n;
+    logActivity('Unit size set, ${u.unit}: $a sqm${n > 0 ? ' ($n unpaid monthly charge${n == 1 ? '' : 's'} updated)' : ''}', 'Units');
+    _n();
+    return null;
+  }
+
+  int lastRecalcCount = 0;
 
   /// Admin: removes a unit that has no account. Returns an error message or null.
   String? removeUnit(Unit u) {
@@ -549,9 +760,113 @@ class AppState extends ChangeNotifier {
 
   String _slotKey(int f, int i) => '${f < amenities.length ? amenities[f].id : f}-$i';
 
-  /// True if the admin blocked this time slot.
+  /// Times the administrator closed for cleaning, repairs and so on (any dates, any hours).
+  final List<FBlock> fblocks = [];
+
+  /// The block that closes one time slot of an amenity on a day, or null.
+  FBlock? slotBlock(int f, int i, String day) {
+    if (f >= amenities.length) return null;
+    final a = amenities[f];
+    final s = (toMinutes(a.open) ?? 0) + i * a.mins;
+    for (final b in fblocks) {
+      if (b.fits(a.name) && b.closes(day, s, s + a.mins)) return b;
+    }
+    return null;
+  }
+
+  /// True if the admin blocked this time slot today.
   bool slotClosed(int f, int i) =>
-      blockedDay == dayKey(DateTime.now()) && (blocked[_slotKey(f, i)] ?? false);
+      (blockedDay == dayKey(DateTime.now()) && (blocked[_slotKey(f, i)] ?? false)) || slotBlock(f, i, dayKey(DateTime.now())) != null;
+
+  /// Blocks that still matter (not finished) for an amenity, soonest first.
+  List<FBlock> blocksFor(String name) {
+    final today = dayKey(DateTime.now());
+    final l = fblocks.where((b) => b.fits(name) && (b.to.isEmpty || b.to.compareTo(today) >= 0)).toList();
+    l.sort((a, b) => a.from.compareTo(b.from));
+    return l;
+  }
+
+  /// Bookings (waiting or approved) that fall inside a block.
+  List<Booking> bookingsInBlock(FBlock b) {
+    final out = <Booking>[];
+    for (final x in bookings) {
+      if (!(x.status == 'Pending' || x.status == 'Approved') || x.day.isEmpty || !b.fits(x.place) || !b.onDay(x.day)) continue;
+      final fi = amenities.indexWhere((a) => a.name == x.place);
+      if (fi < 0 || x.slot < 0) continue;
+      final a = amenities[fi];
+      final s = (toMinutes(a.open) ?? 0) + x.slot * a.mins;
+      if (b.closes(x.day, s, s + a.mins)) out.add(x);
+    }
+    return out;
+  }
+
+  /// Admin: adds a block, or changes [edit]. Returns a message when something is wrong.
+  /// [denyBookings] denies the bookings already made in that time.
+  String? saveBlock(FBlock? edit, {required String facility, required String reason, required String note, required String from, required String to, required bool someHours, required String start, required String end, bool denyBookings = false}) {
+    if (DateTime.tryParse(from) == null) return 'Choose the first date.';
+    if (to.isNotEmpty && DateTime.tryParse(to) == null) return 'Choose a valid last date.';
+    if (to.isNotEmpty && to.compareTo(from) < 0) return 'The last date cannot be before the first date.';
+    if (someHours) {
+      final s = toMinutes(start), e = toMinutes(end);
+      if (s == null || e == null) return 'Choose the start and end time.';
+      if (e <= s) return 'The end time must be after the start time.';
+    }
+    final b = edit ?? FBlock('b${DateTime.now().millisecondsSinceEpoch}', facility, reason, note.trim(), from, to, someHours, start, end);
+    if (edit != null) {
+      b
+        ..facility = facility
+        ..reason = reason
+        ..note = note.trim()
+        ..from = from
+        ..to = to
+        ..someHours = someHours
+        ..start = someHours ? start : ''
+        ..end = someHours ? end : '';
+    } else {
+      if (!someHours) {
+        b.start = '';
+        b.end = '';
+      }
+      fblocks.add(b);
+    }
+    final hit = bookingsInBlock(b);
+    var denied = 0;
+    if (denyBookings) {
+      for (final x in hit) {
+        x.status = 'Denied';
+        denied++;
+      }
+    }
+    lastBlockNote = denied > 0
+        ? 'Saved. $denied booking${denied == 1 ? ' was' : 's were'} denied.'
+        : hit.isNotEmpty
+            ? 'Saved. ${hit.length} booking${hit.length == 1 ? ' is' : 's are'} still inside this time.'
+            : 'Saved. Residents can no longer book that time.';
+    logActivity('${edit == null ? 'Blocked' : 'Blocked time changed'}: ${facility == '*' ? 'all facilities' : facility} ($reason, ${b.whenText})${denied > 0 ? ', $denied denied' : ''}', 'Facilities');
+    _n();
+    return null;
+  }
+
+  /// What the last [saveBlock] did, for a message.
+  String lastBlockNote = '';
+
+  /// Admin: opens a block up again (a block that has not started is cancelled, a running one ends yesterday).
+  void endBlock(FBlock b) {
+    final today = dayKey(DateTime.now());
+    if (b.from.compareTo(today) > 0) {
+      fblocks.remove(b);
+    } else {
+      b.to = dayKey(DateTime.now().subtract(const Duration(days: 1)));
+    }
+    logActivity('Reopened: ${b.facility == '*' ? 'all facilities' : b.facility} (${b.reason})', 'Facilities');
+    _n();
+  }
+
+  /// Admin: removes a finished block from the list.
+  void removeBlock(FBlock b) {
+    fblocks.remove(b);
+    _n();
+  }
 
   /// True if the time slot is blocked or already booked.
   bool slotBooked(int f, int i) {
@@ -579,6 +894,7 @@ class AppState extends ChangeNotifier {
     final start = (toMinutes(a.open) ?? 0) + i * a.mins;
     if (day == today && start <= now.hour * 60 + now.minute) return 'past';
     if (day == blockedDay && (blocked[_slotKey(f, i)] ?? false)) return 'closed';
+    if (slotBlock(f, i, day) != null) return 'closed';
     if (closedForMaintenance?.call(a.name) ?? false) return 'closed';
     for (final b in bookings) {
       if (b.day == day && b.slot == i && b.place == a.name && (b.status == 'Pending' || b.status == 'Approved')) {
@@ -654,8 +970,43 @@ class AppState extends ChangeNotifier {
   /// Daily parking rate (per day). 0 means the daily option is not offered.
   num motorRateDay = 0;
 
-  /// What one unit pays each month in association dues (set by the administrator).
+  /// Monthly association dues per square meter of floor area (set by the administrator).
   num duesRate = 0;
+
+  /// What a unit pays each month, and what it has been billed and has paid so far (computed from the records).
+  UnitDues unitDues(Unit u) {
+    var billed = 0.0, paid = 0.0;
+    for (final d in dues) {
+      if (d.unit != u.unit) continue;
+      billed += d.amt;
+      if (d.paid) paid += d.amt;
+    }
+    return UnitDues(u.area, duesRate, (u.area * duesRate * 100).round() / 100, billed, paid);
+  }
+
+  /// Payments recorded on one day.
+  List<PaymentRecord> paymentsOn(DateTime day) =>
+      [for (final p in payments) if (dayKey(p.when) == dayKey(day)) p];
+
+  /// Unpaid charges that fall due on one day.
+  List<Due> dueOn(DateTime day) => [
+        for (final d in dues)
+          if (!d.paid && d.dueDate.isNotEmpty && parseShortDate(d.dueDate) != null && dayKey(parseShortDate(d.dueDate)!) == dayKey(day)) d,
+      ];
+
+  /// Purchases recorded on one day.
+  List<Expense> expensesOn(DateTime day) => [for (final e in expenses) if (dayKey(e.date) == dayKey(day)) e];
+
+  /// Money collected on every day of a month (index 0 = the 1st).
+  List<double> collectedPerDay(int year, int month) {
+    final n = DateTime(year, month + 1, 0).day;
+    final out = List<double>.filled(n, 0);
+    for (final p in payments) {
+      final w = p.when;
+      if (w.year == year && w.month == month) out[w.day - 1] += p.amount.toDouble();
+    }
+    return out;
+  }
   final List<ParkingReq> parking = [];
   final List<ParkingSlot> slots = [];
 
@@ -779,17 +1130,20 @@ class AppState extends ChangeNotifier {
   List<Due> get myDues => dues.where((d) => d.unit == myUnit).toList()..sort((a, b) => b.id.compareTo(a.id));
 
   /// Resident: "I have paid" with the reference number. [due] is the charge being paid (the oldest open one when null).
-  String? submitProof(String method, String reference, String amountRaw, {Due? due}) {
+  String? submitProof(String method, String reference, String amountRaw, {Due? due, String image = '', String paidOn = ''}) {
     final a = double.tryParse(amountRaw.trim().replaceAll(',', ''));
     if (a == null || a <= 0) return 'Enter the amount you paid.';
     if (reference.trim().isEmpty) {
       return 'Enter the reference number from your payment receipt.';
     }
+    final paidDay = parseShortDate(paidOn.trim());
+    if (paidDay == null) return 'Enter the date you paid, like ${shortDate(DateTime.now())}.';
+    if (paidDay.isAfter(DateTime.now())) return 'The date you paid cannot be in the future.';
     final target = (due != null && !due.paid) ? due : _firstOpenDue(myUnit);
     proofs.insert(
         0,
         PaymentProof(nextId(), myUnit, myHousehold, method, reference.trim(), shortDate(DateTime.now()), a,
-            forText: target == null ? 'Association dues' : target.note));
+            forText: target == null ? 'Association dues' : target.note, at: DateTime.now().millisecondsSinceEpoch, image: image, paidOn: shortDate(paidDay)));
     logActivity('Payment reference sent, $myUnit', 'Finance');
     _n();
     return null;
@@ -866,8 +1220,331 @@ class AppState extends ChangeNotifier {
   /// Date -> 'October 2026'.
   String monthLabel(DateTime d) => '${_months[d.month - 1]} ${d.year}';
 
-  /// Admin: the proof checks out - record the payment and issue a receipt.
-  PaymentRecord confirmProof(PaymentProof p) {
+  // ---- automatic posting of the payments residents send
+
+  /// When on, a payment that matches its charge is posted by itself [autoPostHours] after it was sent.
+  bool autoPostOn = true;
+  int autoPostHours = 24;
+
+  void setAutoPost(bool on, int hours) {
+    autoPostOn = on;
+    autoPostHours = hours;
+    logActivity('Automatic posting ${on ? 'on, after $hours hours' : 'turned off'}', 'Settings');
+    _n();
+  }
+
+  // ------------------------------------------------------------ reminders and the bell
+
+  RemCfg remParking = RemCfg(days: 5, freq: 'every');
+  RemCfg remDues = RemCfg(days: 2, freq: 'daily');
+
+  /// Read marks and "shown today" marks of the notification list and the reminder pop-up.
+  final NotifBook book = NotifBook();
+
+  RemCfg remOf(String kind) => kind == 'parking' ? remParking : remDues;
+
+  void setRem(String kind, RemCfg c) {
+    if (kind == 'parking') {
+      remParking = c;
+      parkSoonDays = c.on ? c.days : -9999;
+    } else {
+      remDues = c;
+    }
+    logActivity('Reminder changed: ${remNames[kind]} (${c.on ? '${c.days} days before, ${(remFreqLabels[c.freq] ?? '').toLowerCase()}' : 'off'})', 'Settings');
+    _n();
+  }
+
+  /// The message of a reminder, in the office's words when it has set them.
+  String remText(String kind, Map<String, String> vars) {
+    final t = remOf(kind).msg.trim();
+    return remFill(t.isEmpty ? remDefaultText[kind]! : t, vars);
+  }
+
+  /// Whether the office wrote its own words for this reminder.
+  bool remCustom(String kind) => remOf(kind).msg.trim().isNotEmpty;
+
+  /// Who the bell belongs to.
+  String get bellScope => role == Role.admin ? 'admin' : 'r-$myUnit';
+
+  /// The signed-in resident's notifications with read marks, newest first.
+  List<NotifItem> get myBell => book.list(bellScope, [
+        for (final n in myNotifs) (text: n[0], tone: n[1], dueId: n.length > 2 ? n[2] : null, icon: null, tab: null),
+      ]);
+
+  int bellBadge(List<NotifItem> items) => book.badge(bellScope, items);
+
+  void bellOpened(String scope) {
+    book.opened[scope] = DateTime.now().millisecondsSinceEpoch;
+    _n();
+  }
+
+  void bellRead(String key) {
+    book.read[key] = DateTime.now().millisecondsSinceEpoch;
+    _n();
+  }
+
+  void bellReadAll(List<NotifItem> items) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final n in items) {
+      book.read[n.key] = now;
+    }
+    _n();
+  }
+
+  /// Reminders this resident has right now (before the "how often" rule), most urgent first.
+  List<Reminder> get remCandidates {
+    final out = <Reminder>[];
+    final slot = slotOf(myUnit);
+    final pd = slot == null ? null : parkDueOf(slot);
+    if (remParking.on &&
+        remParking.freq != 'bell' &&
+        slot != null &&
+        pd != null &&
+        pd.soon &&
+        !leaveNotes.containsKey(myUnit) &&
+        renewProofOf(myUnit, slot.id) == null &&
+        walkinOf(myUnit, renew: true) == null) {
+      out.add(Reminder(
+        'park:${slot.id}:${pd.nextDue}',
+        'parking',
+        pd.late ? 'Your parking rental has ended or is due' : 'Your parking rental is almost up',
+        remText('parking', {'slot': slot.id, 'date': isoShort(pd.nextDue), 'days': parkDaysText(pd.days)}),
+        'Open Parking',
+        pd.late,
+        pd.days,
+      ));
+    }
+    if (remDues.on && remDues.freq != 'bell') {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      for (final d in myDues.where((d) => !d.paid)) {
+        if (myProofs.any((p) => p.status == 'Pending' && p.forText == d.note)) continue;
+        final due = parseShortDate(d.dueDate);
+        if (due == null) continue;
+        final n = DateTime(due.year, due.month, due.day).difference(today).inDays;
+        if (n > remDues.days) continue;
+        out.add(Reminder(
+          'due:${d.id}',
+          'dues',
+          n < 0 ? 'Overdue charge' : 'Charge coming due',
+          remText('dues', {'item': d.note, 'amount': peso(d.amt), 'when': remWhen(n), 'date': d.dueDate}),
+          'Pay now',
+          n < 0,
+          n,
+          '${d.id}',
+        ));
+      }
+    }
+    out.sort((a, b) => a.n.compareTo(b.n));
+    return out.take(4).toList();
+  }
+
+  /// The reminders to pop up now. Asking marks them as shown today.
+  List<Reminder> remPopupItems() {
+    final today = dayKey(DateTime.now());
+    if (book.snoozed[myUnit] == today) return [];
+    final items = remCandidates.where((r) => remOf(r.kind).freq == 'every' || book.shown['$myUnit|${r.key}'] != today).toList();
+    for (final r in items) {
+      book.shown['$myUnit|${r.key}'] = today;
+    }
+    return items;
+  }
+
+  void remSnoozeToday() => book.snoozed[myUnit] = dayKey(DateTime.now());
+
+  // ---- automatic monthly billing
+
+  /// When on, the first time an administrator has the app open in a new month, every unit not yet billed for that month is billed.
+  bool autoBillOn = true;
+
+  void setAutoBill(bool on) {
+    autoBillOn = on;
+    logActivity('Automatic monthly billing ${on ? 'turned on' : 'turned off'}', 'Settings');
+    _n();
+  }
+
+  /// Bills this month's association dues to every unit that has not been billed for it yet (floor area x the rate per sqm, on the
+  /// unit's own due day). The same month is never billed twice and units with no floor area are skipped. Returns how many were billed.
+  /// In a live system this would run on the server's clock.
+  int autoBillCheck() {
+    if (!autoBillOn || role != Role.admin || duesRate <= 0 || units.isEmpty) return 0;
+    final now = DateTime.now();
+    final period = monthLabel(now);
+    final note = 'Association dues - $period';
+    var n = 0;
+    for (final u in units) {
+      if (u.area <= 0) continue;
+      if (dues.any((d) => d.unit == u.unit && d.note == note)) continue;
+      var ud = '';
+      if (u.dueDay >= 1) {
+        final last = DateTime(now.year, now.month + 1, 0).day;
+        ud = shortDate(DateTime(now.year, now.month, u.dueDay > last ? last : u.dueDay));
+      }
+      dues.add(Due(nextId(), u.unit, u.name, (u.area * duesRate * 100).round() / 100, note,
+          dueDate: ud, billedOn: shortDate(now), area: u.area, rate: duesRate));
+      n++;
+    }
+    if (n > 0) {
+      logActivity('Dues billed automatically for $period: $n unit${n == 1 ? '' : 's'}', 'Finance');
+      _n();
+    }
+    return n;
+  }
+
+  /// Late charge added by the system when a charge is still unpaid [lateFeeDays] days after its due date.
+  bool lateFeeOn = true;
+  int lateFeeDays = 1;
+
+  void setLateFee(bool on, int days, num pct) {
+    lateFeeOn = on;
+    lateFeeDays = days;
+    latePct = pct;
+    logActivity('Automatic late charge ${on ? 'on, $pct% after $days day${days == 1 ? '' : 's'}' : 'turned off'}', 'Settings');
+    _n();
+  }
+
+  /// Adds the late charge to every charge still unpaid after the waiting days. Skips charges the resident already sent a payment for,
+  /// charges the office answered "No" about, and charges that are themselves a late charge or a balance. Returns how many were added.
+  int autoLateFeeCheck() {
+    if (!lateFeeOn || role != Role.admin) return 0;
+    final pend = <String>{for (final p in proofs) if (p.status == 'Pending') '${p.unit}|${p.forText}'};
+    final todo = [
+      for (final d in dues)
+        if (!d.paid &&
+            d.daysLate != null &&
+            d.daysLate! >= lateFeeDays &&
+            d.daysLate! <= lateFeeDays + 6 &&
+            d.amount > 0 &&
+            d.lateFeeId == 0 &&
+            d.checkedAt == 0 &&
+            d.lateFor == 0 &&
+            d.balanceOf == 0 &&
+            !d.note.startsWith('Late charge') &&
+            !pend.contains('${d.unit}|${d.note}'))
+          d,
+    ];
+    for (final d in todo) {
+      final amt = (d.amount * latePct).round() / 100;
+      if (amt <= 0) continue;
+      final lid = nextId();
+      dues.add(Due(lid, d.unit, d.name, amt, 'Late charge: ${d.note}',
+          dueDate: shortDate(DateTime.now().add(const Duration(days: 7))), billedOn: shortDate(DateTime.now()), lateFor: d.id));
+      d.lateFeeId = lid;
+      d.lateFeeAuto = true;
+      d.remindedOn = shortDate(DateTime.now());
+      d.remindedAt = DateTime.now().millisecondsSinceEpoch;
+      d.reminders++;
+      d.remindMsg = 'This charge is overdue, so a late charge of ${peso(amt)} was added. Please pay now and send your proof under Dues. If you already paid, send your payment details so it is removed.';
+      logActivity('Late charge added automatically, ${d.unit}: ${d.note} (${peso(amt)})', 'Finance');
+    }
+    if (todo.isNotEmpty) _n();
+    return todo.length;
+  }
+
+  /// A late charge added by the system is taken off again when the resident paid on time.
+  void _voidAutoLateFee(Due d, DateTime? paidDate) {
+    if (d.lateFeeId == 0 || !d.lateFeeAuto || paidDate == null) return;
+    final x = parseShortDate(d.dueDate);
+    if (x == null) return;
+    final lf = dues.where((e) => e.id == d.lateFeeId).firstOrNull;
+    if (lf == null || lf.paid) return;
+    if (DateTime(paidDate.year, paidDate.month, paidDate.day).isAfter(DateTime(x.year, x.month, x.day))) return;
+    dues.remove(lf);
+    logActivity('Late charge removed, ${d.unit}: ${d.note} (paid on time)', 'Finance');
+  }
+
+  /// What is wrong (if anything) with a payment the resident sent. Clean ones can be posted automatically.
+  ProofCheck proofCheck(PaymentProof p) {
+    final why = <String>[];
+    final isParking = p.forText == parkingPayFor;
+    final named = _openDueNamed(p.unit, p.forText);
+    num? expected;
+    if (named != null) {
+      expected = named.amt;
+    } else if (isParking) {
+      final req = p.slot.isEmpty ? null : parking.where((r) => r.unit == p.unit && r.slot == p.slot).firstOrNull;
+      final rs = p.renew ? slots.where((x) => x.id == p.slot).firstOrNull : null;
+      final mr = rs != null ? parkRenewAmount(rs) : ((req != null && req.amount > 0) ? req.amount : parkRatesFor(p.slot.isEmpty ? 'Regular' : slotSize(p.slot)).month);
+      if (mr > 0) {
+        expected = mr;
+      } else {
+        why.add('The parking rate is not set, so the amount cannot be checked.');
+      }
+    } else if (p.forText == 'Other charge') {
+      why.add('An "other charge" has no fixed amount. Check it yourself.');
+    } else if (dues.any((d) => d.unit == p.unit && d.paid && d.note == p.forText)) {
+      why.add('That charge is already marked paid.');
+    } else {
+      why.add('No unpaid charge named "${p.forText}" for this unit.');
+    }
+    if (expected != null && (p.amount - expected).abs() > 0.009) {
+      final diff = (p.amount - expected).abs();
+      why.add('Amount sent ${peso(p.amount)} but it should be ${peso(expected)} (${p.amount < expected ? 'short' : 'over'} by ${peso(diff)}).');
+    }
+    final checks = <CheckItem>[];
+    if (expected == null) {
+      checks.add(const CheckItem(null, 'No fixed amount'));
+    } else {
+      final amtOk = (p.amount - expected).abs() <= 0.009;
+      checks.add(CheckItem(amtOk, amtOk ? 'Amount matches the charge' : 'Amount does not match'));
+    }
+    final whyBeforeRef = why.length;
+    final ref = p.reference.trim();
+    if (ref.length < 4 || ref == '—') {
+      why.add('No reference number.');
+    } else {
+      final low = ref.toLowerCase();
+      final dup = proofs.where((o) => o.id != p.id && o.status != 'Rejected' && o.reference.toLowerCase() == low && o.method == p.method).firstOrNull;
+      if (dup != null) {
+        why.add('The same reference number was also sent by ${dup.unit}.');
+      } else if (payments.any((o) => o.reference.toLowerCase() == low && o.method == p.method)) {
+        why.add('This reference number already has a receipt.');
+      }
+    }
+    final refOk = why.length == whyBeforeRef;
+    checks.add(CheckItem(refOk, refOk ? 'Reference number is new' : 'Reference number problem'));
+    if (named != null) {
+      checks.add(const CheckItem(true, 'Charge is open'));
+    } else if (isParking) {
+      checks.add(const CheckItem(true, 'Parking charge'));
+    } else if (p.forText == 'Other charge') {
+      checks.add(const CheckItem(null, 'Other charge'));
+    } else {
+      checks.add(const CheckItem(false, 'Charge not found'));
+    }
+    checks.add(p.image.isNotEmpty ? const CheckItem(true, 'Photo attached') : const CheckItem(null, 'No photo'));
+    final dueDay = named == null ? null : parseShortDate(named.dueDate);
+    final paidDay = parseShortDate(p.paidOn);
+    if (paidDay == null) {
+      checks.add(const CheckItem(null, 'No payment date given'));
+    } else if (dueDay == null) {
+      checks.add(CheckItem(null, 'Paid on ${p.paidOn}'));
+    } else {
+      final late = DateTime(paidDay.year, paidDay.month, paidDay.day).difference(DateTime(dueDay.year, dueDay.month, dueDay.day)).inDays;
+      checks.add(late <= 0 ? CheckItem(true, 'Paid on time (${p.paidOn})') : CheckItem(null, 'Paid $late day${late == 1 ? '' : 's'} after the due date'));
+    }
+    return ProofCheck(why, expected, named, checks);
+  }
+
+  /// When a pending payment will be posted by itself.
+  DateTime autoPostAt(PaymentProof p) => p.sentAt.add(Duration(hours: autoPostHours));
+
+  /// Posts, by itself, every clean payment that has waited long enough. Returns how many were posted.
+  int autoPostCheck() {
+    if (!autoPostOn || role != Role.admin) return 0;
+    final now = DateTime.now();
+    final ready = [
+      for (final p in proofs)
+        if (p.status == 'Pending' && !p.direct && !autoPostAt(p).isAfter(now) && proofCheck(p).ok) p,
+    ];
+    for (final p in ready) {
+      confirmProof(p, auto: true);
+    }
+    return ready.length;
+  }
+
+  /// Admin: the proof checks out - record the payment and issue a receipt. [auto] = posted by the system.
+  PaymentRecord confirmProof(PaymentProof p, {bool auto = false}) {
     if (p.status != 'Pending') {
       // Already handled (for example on the website a moment ago): return the receipt that exists.
       for (final r in payments) {
@@ -875,25 +1552,44 @@ class AppState extends ChangeNotifier {
       }
     }
     p.status = 'Confirmed';
+    p.auto = auto;
     p.receiptNo = nextReceiptNo();
     p.confirmedOn = shortDate(DateTime.now());
     final isParking = p.forText == parkingPayFor;
-    final due = isParking ? null : (_openDueNamed(p.unit, p.forText) ?? _firstOpenDue(p.unit));
+    final due = _openDueNamed(p.unit, p.forText) ?? (isParking ? null : _firstOpenDue(p.unit));
     final String forText;
     if (due != null) {
       due.paid = true;
+      _voidAutoLateFee(due, parseShortDate(p.paidOn));
       forText = due.note;
     } else {
       forText = p.forText.isNotEmpty ? p.forText : 'Association dues';
     }
     p.forText = forText;
     final rec = _addPayment(p.unit, p.payer, forText, p.method, p.reference, p.amount, proof: p);
-    logActivity('Payment recorded, ${p.unit}', 'Finance');
-    // A paid parking reservation: the chosen slot goes to the resident straight away.
+    logActivity(auto ? 'Payment posted automatically, ${p.unit} (${p.receiptNo})' : 'Payment recorded, ${p.unit}', 'Finance');
+    // A paid parking reservation: the chosen slot goes to the resident straight away. A paid renewal extends the rental.
     if (isParking && p.slot.isNotEmpty) {
-      final req = parking.where((r) => r.unit == p.unit && !r.confirmed && r.slot == p.slot).firstOrNull;
-      if (req != null && assignRequest(req) == null) {
-        logActivity('Parking slot ${p.slot} assigned to ${p.unit} (paid)', 'Parking');
+      final sl = slots.where((x) => x.id == p.slot).firstOrNull;
+      if (p.renew) {
+        if (sl != null && sl.unit == p.unit) {
+          final now = DateTime.now();
+          final today = isoDay(now);
+          final cur = DateTime.tryParse(sl.until);
+          final start = (cur != null && sl.until.compareTo(today) >= 0) ? DateTime(cur.year, cur.month, cur.day + 1) : now;
+          sl.until = parkUntil('month', 1, start);
+          walkins.removeWhere((w) => w.unit == p.unit && w.renew);
+          leaveNotes.remove(p.unit);
+          logActivity('Parking rental renewed: ${sl.id} · ${p.unit} until ${isoShort(sl.until)}', 'Parking');
+          sendSms(p.unit, approvedSmsText(sl, p.receiptNo, p.amount, true));
+        }
+      } else {
+        final req = parking.where((r) => r.unit == p.unit && !r.confirmed && r.slot == p.slot).firstOrNull;
+        if (req != null && assignRequest(req) == null) {
+          walkins.removeWhere((w) => w.unit == p.unit && !w.renew);
+          logActivity('Parking slot ${p.slot} assigned to ${p.unit} (paid)', 'Parking');
+          if (sl != null) sendSms(p.unit, approvedSmsText(sl, p.receiptNo, p.amount, false));
+        }
       }
     }
     _n();
@@ -975,6 +1671,10 @@ class AppState extends ChangeNotifier {
 
   List<List<String>> get myNotifs {
     final out = <List<String>>[];
+    final hh = myUnitRec;
+    if (hh != null && hh.profileUpdated > hh.selfUpdated && DateTime.now().millisecondsSinceEpoch - hh.profileUpdated < 7 * 86400000) {
+      out.add(['The office updated your household record on ${shortDate(DateTime.fromMillisecondsSinceEpoch(hh.profileUpdated))}. You can see it on your dashboard.', 'info']);
+    }
     for (final b in myBookings) {
       if (b.status == 'Approved') {
         out.add(['Your ${b.place} booking (${b.when}) was approved.', 'good']);
@@ -984,16 +1684,76 @@ class AppState extends ChangeNotifier {
         out.add(['Your ${b.place} request (${b.when}) is waiting for approval.', 'info']);
       }
     }
+    final openMine = myDues.where((d) => !d.paid).toList();
+    if (openMine.isNotEmpty) {
+      final owed = openMine.fold<num>(0, (s, d) => s + d.amt);
+      final latest = openMine.first;
+      out.add([
+        'You have ${openMine.length} unpaid charge${openMine.length > 1 ? 's' : ''} (${peso(owed)}). Latest: ${latest.note}, billed ${latest.billed.isEmpty ? 'recently' : latest.billed}.',
+        'info'
+      ]);
+      for (final d in openMine.where((d) {
+        final b = parseShortDate(d.billed);
+        return b != null && DateTime.now().difference(b).inDays < 14;
+      }).take(3)) {
+        out.add([
+          'New charge from the office: ${d.note} (${peso(d.amt)}), billed ${d.billed}${d.dueDate.isEmpty ? '' : ', due ${d.dueDate}'}.',
+          'info'
+        ]);
+      }
+    }
+    for (final d in openMine) {
+      final rem = parseShortDate(d.remindedOn);
+      final due = parseShortDate(d.dueDate);
+      final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+      final days = due?.difference(today).inDays;
+      if (rem != null && DateTime.now().difference(rem).inDays < 10) {
+        final state = days == null
+            ? 'is waiting for your payment.'
+            : days < 0
+                ? 'is overdue by ${-days} day${days == -1 ? '' : 's'}.'
+                : days == 0
+                    ? 'is due today.'
+                    : 'is due in $days day${days == 1 ? '' : 's'} (${d.dueDate}).';
+        out.add(['Reminder from the office (${d.remindedOn})${d.remindMsg.isEmpty ? ':' : ': ${d.remindMsg} —'} ${d.note} (${peso(d.amt)}) $state', days != null && days < 0 ? 'bad' : 'info']);
+      }
+    }
+    // Overdue from the day after the due date, and a heads-up 2 days ahead. Each one has a Pay now action.
+    final todayD = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    var nLate = 0;
+    for (final d in openMine) {
+      final due = parseShortDate(d.dueDate);
+      if (due == null) continue;
+      if (myProofs.any((p) => p.status == 'Pending' && p.forText == d.note)) continue;
+      final days = DateTime(due.year, due.month, due.day).difference(todayD).inDays;
+      if (days < 0 && nLate < 4) {
+        nLate++;
+        out.insert(0, ['Overdue by ${-days} day${days == -1 ? '' : 's'}: ${d.note} (${peso(d.amt)}). Tap to pay and send your proof.', 'bad', '${d.id}']);
+      } else if (days >= 0 && remDues.on && days <= remDues.days) {
+        out.add([
+          days == 0
+              ? '${d.note} is due TODAY (${d.dueDate}). Pay within the day and send your proof so your dashboard updates.'
+              : '${d.note} is due ${days == 1 ? 'tomorrow' : 'in $days days'} (${d.dueDate}). Send your proof before the due date so your dashboard updates.',
+          days == 0 ? 'bad' : 'warn',
+          '${d.id}'
+        ]);
+      }
+    }
     for (final r in myDueRows) {
       if (r.status == 'Overdue') {
         out.add(['${r.month} is overdue.', 'bad']);
       } else if (r.status == 'Open') {
-        out.add(['Open charge: ${r.month}.', 'info']);
+        // the summary above already lists open charges
       }
     }
     for (final p in myProofs) {
       if (p.status == 'Confirmed') {
-        out.add(['Your payment (ref. ${p.reference}) was verified. The receipt is under Dues & payment.', 'good']);
+        out.add(['Your payment (ref. ${p.reference}) was ${p.auto ? 'posted automatically' : 'verified'}. Receipt ${p.receiptNo} is under Dues & payment.', 'good']);
+      } else if (p.status == 'Pending') {
+        out.add([
+          'We received your payment details (${peso(p.amount)}, ref. ${p.reference}).${autoPostOn ? ' It will be posted to your dues automatically by ${clockText(autoPostAt(p))}. If something does not match, the office will tell you here.' : ' The office will verify it soon.'}',
+          'info'
+        ]);
       } else if (p.status == 'Rejected') {
         out.add(['Your payment (ref. ${p.reference}) was rejected${p.reason.isEmpty ? ' (please check the reference number)' : ': ${p.reason.replaceAll(RegExp(r'[.\s]+$'), '')}'}. You can send the correct details.', 'bad']);
       }
@@ -1013,6 +1773,20 @@ class AppState extends ChangeNotifier {
     }
     final mySlot = slotOf(myUnit);
     if (mySlot != null) out.add(['Motor parking slot ${mySlot.id} is assigned to your unit.', 'good']);
+    // a monthly rental that is about to end (or already ended): did they forget, or are they leaving?
+    final pd = mySlot == null ? null : parkDueOf(mySlot);
+    if (mySlot != null && pd != null && pd.soon && !leaveNotes.containsKey(myUnit) && renewProofOf(myUnit, mySlot.id) == null && walkinOf(myUnit, renew: true) == null) {
+      out.insert(0, [
+        remCustom('parking')
+            ? remText('parking', {'slot': mySlot.id, 'date': isoShort(pd.nextDue), 'days': parkDaysText(pd.days)})
+            : 'Your parking rental for ${mySlot.id} ${pd.late ? 'has ended or is due' : 'is almost up'}. The next payment is due ${isoShort(pd.nextDue)} (${parkDaysText(pd.days)}). Renew to keep your slot, or tell the office if you no longer plan to rent.',
+        pd.late ? 'bad' : 'warn'
+      ]);
+    }
+    // the texts the office sent (rental approved, next due date)
+    for (final m in smsLog.where((m) => m.unit == myUnit && DateTime.now().millisecondsSinceEpoch - m.at < 14 * 86400000).take(2)) {
+      out.add(['Text message to your phone: ${m.text}', 'good']);
+    }
     for (final a in myAnnouncements.take(2)) {
       out.add(['New announcement: ${a.title}.', 'info']);
     }
@@ -1178,6 +1952,58 @@ class AppState extends ChangeNotifier {
     _n();
   }
 
+  /// The request that holds a time of amenity [f] today (waiting or approved), if any.
+  Booking? bookingAtSlot(int f, int i) {
+    if (f >= amenities.length) return null;
+    final today = dayKey(DateTime.now());
+    final place = amenities[f].name;
+    return bookings.where((b) => b.day == today && b.slot == i && b.place == place && (b.status == 'Pending' || b.status == 'Approved')).firstOrNull;
+  }
+
+  /// Admin: changes a request's status and time. Returns an error text when the time is taken or closed.
+  String? editBooking(Booking b, String status, int slot) {
+    final fi = amenities.indexWhere((a) => a.name == b.place);
+    final canSlot = fi >= 0 && b.day.isNotEmpty && slot >= 0 && slot < amenities[fi].slots.length;
+    if (canSlot && (status == 'Pending' || status == 'Approved')) {
+      final clash = bookings.where((x) => x != b && x.day == b.day && x.place == b.place && x.slot == slot && (x.status == 'Pending' || x.status == 'Approved')).firstOrNull;
+      if (clash != null) return 'That time is already taken by ${clash.unit}. Choose another time.';
+      if (b.day == dayKey(DateTime.now()) && slotClosed(fi, slot)) return 'That time is closed today. Open it first under Today\'s slots.';
+    }
+    b.status = status;
+    if (canSlot) {
+      b.slot = slot;
+      final date = DateTime.tryParse(b.day);
+      if (date != null) b.when = '${shortDate(date)}, ${amenities[fi].slots[slot]}';
+    }
+    logActivity('${b.place} booking changed (${status.toLowerCase()}), ${b.unit}', 'Facilities');
+    _n();
+    return null;
+  }
+
+  /// Admin: deletes a request for good, so its time becomes free.
+  void removeBooking(Booking b) {
+    bookings.remove(b);
+    logActivity('${b.place} booking removed, ${b.unit}', 'Facilities');
+    _n();
+  }
+
+  /// Admin: reserves a time of amenity [f] today for a unit (for example a walk-in at the office).
+  String? reserveAmenityTime(int f, int i, String unitRaw) {
+    String norm(String t) => t.toLowerCase().replaceAll('unit', '').replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final key = norm(unitRaw);
+    final u = key.isEmpty ? null : units.where((x) => norm(x.unit) == key).firstOrNull;
+    if (u == null) return 'No unit with that name. Use a name such as "Unit 12A".';
+    final a = amenities[f];
+    final now = DateTime.now();
+    final start = (toMinutes(a.open) ?? 0) + i * a.mins;
+    if (start <= now.hour * 60 + now.minute) return 'That time has already passed today. Choose a later time.';
+    if (slotBooked(f, i)) return 'That time is no longer open.';
+    bookings.insert(0, Booking(nextId(), u.name.isEmpty || u.name == '—' ? u.unit : u.name, u.unit, a.name, '${shortDate(now)}, ${a.slots[i]}', 'Approved', day: dayKey(now), slot: i));
+    logActivity('${a.name} reserved for ${u.unit} (${a.slots[i]})', 'Facilities');
+    _n();
+    return null;
+  }
+
   /// Approves or denies a booking.
   void bookAct(int id, String status) {
     final b = bookings.firstWhere((b) => b.id == id);
@@ -1187,34 +2013,281 @@ class AppState extends ChangeNotifier {
   }
 
   /// Admin: adds a charge (e.g. a facility damage fee) to a unit.
-  String? addCharge(String unitRaw, String amountRaw, String note) {
+  static const allUnits = 'All units';
+
+  String? addCharge(String unitRaw, String amountRaw, String note, {String dueRaw = ''}) {
     String norm(String t) => t.toLowerCase().replaceAll('unit', '').replaceAll(RegExp(r'[^a-z0-9]'), '');
     final key = norm(unitRaw);
-    final match = key.isEmpty ? <Unit>[] : units.where((u) => norm(u.unit) == key).toList();
-    if (match.isEmpty) return 'No unit with that name. Add the unit first, or use a name such as "Unit 12A".';
+    final everyone = unitRaw.trim().toLowerCase() == allUnits.toLowerCase();
+    final match = everyone
+        ? [for (final u in units) if (u.name.isNotEmpty && u.name != '—') u]
+        : (key.isEmpty ? <Unit>[] : units.where((u) => norm(u.unit) == key).toList());
+    if (match.isEmpty) return everyone ? 'No unit has a household yet.' : 'No unit with that name. Add the unit first, or use a name such as "Unit 12A", or type All units.';
     final a = double.tryParse(amountRaw.trim().replaceAll(',', ''));
     if (a == null || a <= 0) return 'Enter a valid amount.';
     if (note.trim().isEmpty) return 'Add a short description, e.g. Facility damage fee.';
-    dues.add(Due(nextId(), match.first.unit, match.first.name, a, note.trim()));
-    logActivity('Charge added, ${match.first.unit}: ${note.trim()}', 'Finance');
+    var due = '';
+    if (dueRaw.trim().isNotEmpty) {
+      final d = parseShortDate(dueRaw);
+      if (d == null) return 'Enter the due date like "Oct 15, 2026".';
+      due = shortDate(d);
+    }
+    for (final u in everyone ? match : [match.first]) {
+      dues.add(Due(nextId(), u.unit, u.name, a, note.trim(), dueDate: due, billedOn: shortDate(DateTime.now())));
+    }
+    logActivity('Charge added, ${everyone ? 'all units (${match.length})' : match.first.unit}: ${note.trim()}', 'Finance');
     _n();
     return null;
   }
 
   /// Admin: sets what each unit pays every month.
-  String? setDuesRate(String raw) {
+  String? setDuesRate(String raw, {bool recalc = false}) {
     final n = double.tryParse(raw.trim().replaceAll(',', ''));
-    if (n == null || n <= 0) return 'Enter the monthly dues amount.';
+    if (n == null || n <= 0) return 'Enter the monthly dues per square meter.';
     duesRate = n;
+    var k = 0;
+    if (recalc) {
+      for (final d in dues.where((d) => !d.paid && d.area > 0 && d.rate > 0 && d.rate != n)) {
+        d.rate = n;
+        d.amount = (d.area * n * 100).round() / 100;
+        k++;
+      }
+    }
+    lastRecalcCount = k;
+    if (k > 0) logActivity('Monthly dues per sqm set to ${peso(n)} ($k unpaid monthly charge${k == 1 ? '' : 's'} updated)', 'Finance');
     _n();
     return null;
   }
 
+  /// What a unit of each size pays at [rate] per sqm: [size, units, price], smallest first, plus units with no size.
+  ({List<(num, int, num)> rows, int noSize, num total}) priceTable(num rate) {
+    final groups = <num, int>{};
+    var none = 0;
+    num total = 0;
+    for (final u in units) {
+      if (u.area <= 0) {
+        none++;
+        continue;
+      }
+      groups[u.area] = (groups[u.area] ?? 0) + 1;
+      total += (u.area * rate * 100).round() / 100;
+    }
+    final sizes = groups.keys.toList()..sort();
+    return (rows: [for (final a in sizes) (a, groups[a]!, (a * rate * 100).round() / 100)], noSize: none, total: total);
+  }
+
+  // ---- "Did they pay?" (administrator) ----
+  /// The late charge, as a percentage of the unpaid charge. The office changes it when answering "No".
+  num latePct = 5;
+
+  /// After a "No", the same charge is not asked about again for this many days.
+  static const payCheckRecheckDays = 7;
+  static const payCheckAsk =
+      'Your charge is due. If you already paid, please send your payment details (and a photo of your payment) under Dues so your balance updates. If not yet, please pay soon. Thank you!';
+  static const payCheckNoMsg =
+      'Our records show this charge is still unpaid. Please pay it, or if you already paid, send your payment details under Dues so your balance updates. Thank you!';
+
+  /// Charges whose due date has come (or passed) with no payment on record and nothing sent by the resident,
+  /// oldest first. They may well have been paid already without the resident telling the system.
+  List<({Due due, int days})> get payCheckList {
+    final now = DateTime.now();
+    final today = DateTime.utc(now.year, now.month, now.day);
+    final pend = <String>{for (final p in proofs) if (p.status == 'Pending') '${p.unit}|${p.forText}'};
+    final out = <({Due due, int days})>[];
+    for (final d in dues) {
+      if (d.paid || d.dueDate.isEmpty || d.amount <= 0) continue;
+      final x = parseShortDate(d.dueDate);
+      if (x == null) continue;
+      final days = today.difference(DateTime.utc(x.year, x.month, x.day)).inDays;
+      if (days < 0) continue;
+      if (pend.contains('${d.unit}|${d.note}')) continue;
+      if (d.checkedAt > 0 && now.millisecondsSinceEpoch - d.checkedAt < payCheckRecheckDays * 86400000) continue;
+      out.add((due: d, days: days));
+    }
+    out.sort((a, b) => b.days.compareTo(a.days));
+    return out;
+  }
+
+  /// The mobile number to call or text for a unit ('' when none is on file).
+  String unitPhone(String unit) {
+    for (final a in trusted) {
+      if (a.role == 'Resident' && a.unit == unit && a.phone.trim().isNotEmpty) return a.phone.trim();
+    }
+    final u = units.where((x) => x.unit == unit).firstOrNull;
+    return (u == null || u.contact == '—') ? '' : u.contact.trim();
+  }
+
+  /// YES, they paid. Records what was really paid and issues a receipt. If it is less than the charge, the rest becomes
+  /// a new "(balance)" charge with the same due date. Returns an error text, or the receipt number and what is left.
+  ({String? error, String receipt, num left}) payCheckYes(Due d, {required String amountRaw, required String method, String dateRaw = '', String reference = ''}) {
+    ({String? error, String receipt, num left}) bad(String m) => (error: m, receipt: '', left: 0);
+    if (d.paid) return bad('This charge is already paid.');
+    final a = double.tryParse(amountRaw.trim().replaceAll(',', ''));
+    if (a == null || a <= 0) return bad('Enter the amount they paid.');
+    final amt = (a * 100).round() / 100, full = d.amount;
+    if (amt > full + 0.009) return bad('That is more than the charge (${peso(full)}). Enter the amount that applies to this charge.');
+    var when = DateTime.now();
+    if (dateRaw.trim().isNotEmpty) {
+      final x = parseShortDate(dateRaw);
+      if (x == null) return bad('Enter the date like "Oct 25, 2026", or leave it empty for today.');
+      if (x.isAfter(DateTime.now())) return bad('The date paid cannot be in the future.');
+      when = x;
+    }
+    final date = shortDate(when), ref = reference.trim().isEmpty ? '—' : reference.trim();
+    final payer = d.name.isEmpty ? d.unit : d.name;
+    final no = nextReceiptNo();
+    payments.insert(0, PaymentRecord(nextId(), no, d.unit, payer, d.note, method, ref, date, amt));
+    proofs.insert(
+      0,
+      PaymentProof(nextId(), d.unit, payer, method, ref, date, amt,
+          status: 'Confirmed', forText: d.note, receiptNo: no, confirmedOn: date, direct: true),
+    );
+    final left = ((full - amt) * 100).round() / 100;
+    d.paid = true;
+    _voidAutoLateFee(d, when);
+    if (left > 0.009) {
+      d.amount = amt;
+      d.partOf = full;
+      dues.add(Due(nextId(), d.unit, d.name, left, '${d.note} (balance)',
+          dueDate: d.dueDate, billedOn: shortDate(DateTime.now()), balanceOf: d.id, checkedAt: DateTime.now().millisecondsSinceEpoch));
+    }
+    logActivity('Marked paid, ${d.unit}: ${d.note} ${peso(amt)}${left > 0.009 ? ' (balance ${peso(left)} left)' : ''}', 'Finance');
+    _n();
+    return (error: null, receipt: no, left: left > 0.009 ? left : 0);
+  }
+
+  /// NO, they did not pay. Optionally adds a late charge (due in 7 days) and sends the resident a reminder.
+  /// Returns an error text, or a short summary of what was done.
+  ({String? error, String done}) payCheckNo(Due d, {required bool late, String pctRaw = '', required bool notify, String message = ''}) {
+    if (d.paid) return (error: 'This charge is already paid.', done: '');
+    final notes = <String>[];
+    if (late) {
+      final pct = double.tryParse(pctRaw.trim().replaceAll(',', ''));
+      if (pct == null || pct <= 0 || pct > 100) return (error: 'Enter the late charge as a percentage, from 0.1 to 100.', done: '');
+      if (d.lateFeeId > 0) return (error: 'A late charge was already added for this charge.', done: '');
+      final amt = (d.amount * pct).round() / 100;
+      if (amt <= 0) return (error: 'The late charge works out to zero. Raise the percentage.', done: '');
+      final lid = nextId();
+      dues.add(Due(lid, d.unit, d.name, amt, 'Late charge: ${d.note}',
+          dueDate: shortDate(DateTime.now().add(const Duration(days: 7))), billedOn: shortDate(DateTime.now()), lateFor: d.id));
+      d.lateFeeId = lid;
+      latePct = pct;
+      notes.add('late charge ${peso(amt)}');
+    }
+    if (notify) {
+      d.remindedOn = shortDate(DateTime.now());
+      d.remindedAt = DateTime.now().millisecondsSinceEpoch;
+      d.reminders++;
+      d.remindMsg = message.trim().isEmpty ? payCheckNoMsg : message.trim();
+      notes.add('reminder sent');
+    }
+    d.checkedAt = DateTime.now().millisecondsSinceEpoch;
+    d.checkedNo = shortDate(DateTime.now());
+    logActivity('Not paid, ${d.unit}: ${d.note}${notes.isEmpty ? '' : ' (${notes.join(', ')})'}', 'Finance');
+    _n();
+    return (error: null, done: notes.isEmpty ? 'Saved. We will ask again in $payCheckRecheckDays days if it is still unpaid.' : 'Saved for ${d.unit}: ${notes.join(' and ')}.');
+  }
+
+  /// Sends one message to every unit on the list: "if you already paid, send your payment details". Returns how many units.
+  int payCheckAskAll(String message) {
+    final l = payCheckList;
+    final units = <String>{};
+    for (final x in l) {
+      x.due.remindedOn = shortDate(DateTime.now());
+      x.due.remindedAt = DateTime.now().millisecondsSinceEpoch;
+      x.due.reminders++;
+      x.due.remindMsg = message.trim().isEmpty ? payCheckAsk : message.trim();
+      units.add(x.due.unit);
+    }
+    if (units.isNotEmpty) logActivity('Asked ${units.length} unit(s) to send proof of payment', 'Finance');
+    _n();
+    return units.length;
+  }
+
+  /// Admin: sends a reminder for one unpaid charge. The resident sees it under Notifications.
+  void remindDue(Due d, {String message = ''}) {
+    if (d.paid) return;
+    d.remindedOn = shortDate(DateTime.now());
+    d.remindedAt = DateTime.now().millisecondsSinceEpoch;
+    d.reminders++;
+    d.remindMsg = message.trim();
+    logActivity('Reminder sent, ${d.unit}: ${d.note}', 'Finance');
+    _n();
+  }
+
+  /// Unpaid charges that are overdue, due within 7 days, or have no due date.
+  List<Due> needReminder([int days = 7]) => [
+        for (final d in dues)
+          if (!d.paid &&
+              !d.remindedWithin(24) &&
+              (d.dueDate.isEmpty ||
+                  parseShortDate(d.dueDate) == null ||
+                  parseShortDate(d.dueDate)!.difference(DateTime.now()).inDays < days))
+            d,
+      ];
+
+  /// Admin: reminds every unit in [needReminder]. Returns how many units were reminded.
+  int remindAll({int days = 7, String message = ''}) {
+    final list = needReminder(days);
+    final units = <String>{};
+    for (final d in list) {
+      d.remindedOn = shortDate(DateTime.now());
+      d.remindedAt = DateTime.now().millisecondsSinceEpoch;
+      d.reminders++;
+      d.remindMsg = message.trim();
+      units.add(d.unit);
+    }
+    if (units.isNotEmpty) logActivity('Reminders sent to ${units.length} unit${units.length == 1 ? '' : 's'}', 'Finance');
+    _n();
+    return units.length;
+  }
+
   int lastBilledCount = 0;
+  int lastNoAreaCount = 0;
+
+  /// Admin: changes the amount of a charge that is not paid yet (affects that unit only).
+  String? editCharge(Due d, String amountRaw, {String? note, String? dueRaw, bool allUnits = false, bool remove = false}) {
+    if (d.paid) return 'A paid charge cannot be changed.';
+    final oldNote = d.note;
+    final same = [for (final x in dues) if (!x.paid && x.note == oldNote) x];
+    if (remove) {
+      dues.removeWhere((x) => !x.paid && x.note == oldNote);
+      logActivity('Charge removed from ${same.length} unit${same.length == 1 ? '' : 's'}: $oldNote', 'Finance');
+      _n();
+      return null;
+    }
+    final a = double.tryParse(amountRaw.trim().replaceAll(',', ''));
+    if (a == null || a <= 0) return 'Enter a valid amount.';
+    final newNote = (note ?? oldNote).trim();
+    final sameAmt = same.every((x) => (x.amount - d.amount).abs() < 0.005);
+    if (newNote.isEmpty) return 'Add a short description.';
+    var due = d.dueDate;
+    if (dueRaw != null) {
+      if (dueRaw.trim().isEmpty) {
+        due = '';
+      } else {
+        final p = parseShortDate(dueRaw);
+        if (p == null) return 'Enter the due date like "Oct 15, 2026".';
+        due = shortDate(p);
+      }
+    }
+    final old = d.amount;
+    for (final x in (allUnits ? same : [d])) {
+      for (final p in proofs.where((p) => p.status == 'Pending' && p.unit == x.unit && p.forText == oldNote)) {
+        p.forText = newNote;
+      }
+      if (!(allUnits && !sameAmt && (a - old).abs() < 0.005)) x.amount = a;   // different amounts per unit: keep each unit's own unless a new one was typed
+      x.note = newNote;
+      x.dueDate = due;
+    }
+    logActivity('Charge edited, ${allUnits ? '${same.length} units' : d.unit}: $oldNote${newNote != oldNote ? ' → $newNote' : ''} ${peso(old)} to ${peso(a)}', 'Finance');
+    _n();
+    return null;
+  }
 
   /// Admin: bills the monthly association dues to every unit that has not been billed for [period] yet.
   String? billMonthlyDues(String period, String dueRaw) {
-    if (duesRate <= 0) return 'Set the monthly dues amount first.';
+    if (duesRate <= 0) return 'Set the monthly dues per square meter first.';
     if (units.isEmpty) return 'Add the units first.';
     final p = period.trim();
     if (p.isEmpty) return 'Enter the month, e.g. October 2026.';
@@ -1225,13 +2298,27 @@ class AppState extends ChangeNotifier {
       due = shortDate(d);
     }
     final note = 'Association dues - $p';
-    var n = 0;
+    final pm = _months.indexWhere((m) => p.toLowerCase().contains(m.toLowerCase()));
+    final py = int.tryParse(RegExp(r'(20\d\d)').firstMatch(p)?.group(1) ?? '') ?? DateTime.now().year;
+    final month = pm >= 0 ? pm + 1 : DateTime.now().month;
+    var n = 0, noArea = 0;
     for (final u in units) {
       if (dues.any((d) => d.unit == u.unit && d.note == note)) continue;
-      dues.add(Due(nextId(), u.unit, u.name, duesRate, note, dueDate: due));
+      if (u.area <= 0) {
+        noArea++;
+        continue;
+      }
+      var ud = due;
+      if (u.dueDay >= 1) {
+        final last = DateTime(py, month + 1, 0).day;
+        ud = shortDate(DateTime(py, month, u.dueDay > last ? last : u.dueDay));
+      }
+      dues.add(Due(nextId(), u.unit, u.name, (u.area * duesRate * 100).round() / 100, note,
+          dueDate: ud, billedOn: shortDate(DateTime.now()), area: u.area, rate: duesRate));
       n++;
     }
     lastBilledCount = n;
+    lastNoAreaCount = noArea;
     if (n > 0) logActivity('Dues billed for $p: $n unit${n == 1 ? '' : 's'}', 'Finance');
     _n();
     return null;
@@ -1242,7 +2329,15 @@ class AppState extends ChangeNotifier {
     final d = dues.firstWhere((d) => d.id == id);
     if (d.paid) return null;
     d.paid = true;
-    final rec = _addPayment(d.unit, d.name, d.note, method, reference, d.amt);
+    // A submission the resident already sent for this charge is closed with the same receipt,
+    // so "Verify" can never settle another charge for the same money.
+    final pending = proofs.where((p) => p.status == 'Pending' && p.unit == d.unit && p.forText == d.note).firstOrNull;
+    if (pending != null) {
+      pending.status = 'Confirmed';
+      pending.receiptNo = nextReceiptNo();
+      pending.confirmedOn = shortDate(DateTime.now());
+    }
+    final rec = _addPayment(d.unit, d.name, d.note, method, reference, d.amt, proof: pending);
     logActivity('Payment recorded, ${d.unit}', 'Finance');
     _n();
     return rec;
@@ -1266,8 +2361,92 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  /// What a rental costs: the monthly rate, or the daily rate times [days].
-  num parkAmount(String plan, int days) => plan == 'day' ? motorRateDay * (days < 1 ? 1 : days) : motorRate;
+  /// The rates the office saved for each slot size. Empty until they are saved.
+  List<ParkSize> parkSizesSaved = [];
+
+  /// Every slot size with its rates. Until the office sets them they come from the single rates.
+  List<ParkSize> get parkSizes => parkSizesSaved.isNotEmpty
+      ? parkSizesSaved
+      : [for (final z in kParkSizeDefaults) ParkSize(z.$1, z.$2, (motorRate * z.$3 / 10).round() * 10, (motorRateDay * z.$3).round())];
+
+  /// The rates of a size name (Regular when the name is unknown).
+  ParkSize parkRatesFor(String size) {
+    final all = parkSizes;
+    return all.where((z) => z.name == size).firstOrNull ?? all.where((z) => z.name == 'Regular').firstOrNull ?? all.first;
+  }
+
+  /// The size of a slot by its name.
+  String slotSize(String id) => slots.where((s) => s.id == id).firstOrNull?.size ?? 'Regular';
+
+  /// Admin: saves the rates of every slot size. The Regular size also keeps the old single rates in step.
+  String? setParkSizes(List<ParkSize> list) {
+    for (final z in list) {
+      if (z.month <= 0) return 'Enter a monthly rate for the ${z.name} slot.';
+    }
+    parkSizesSaved = list;
+    final reg = list.where((z) => z.name == 'Regular').firstOrNull;
+    if (reg != null) {
+      motorRate = reg.month;
+      motorRateDay = reg.day;
+    }
+    logActivity('Parking rates by slot size saved', 'Finance');
+    _n();
+    return null;
+  }
+
+  /// Admin: changes the size of a slot. The next resident pays the rate of this size.
+  void setSlotSize(ParkingSlot s, String size) {
+    s.size = size;
+    logActivity('Parking slot ${s.id} set to $size', 'Parking');
+    _n();
+  }
+
+  /// What a rental costs: the monthly rate, or the daily rate times [days], for a slot [size].
+  num parkAmount(String plan, int days, {String size = 'Regular'}) {
+    final r = parkRatesFor(size);
+    return plan == 'day' ? r.day * (days < 1 ? 1 : days) : r.month;
+  }
+
+  /// Resident: saves the household details they may edit themselves (the office sees them).
+  void saveMyRecord(Map<String, String> v, {int residents = 0}) {
+    final u = myUnitRec;
+    if (u == null) return;
+    String t(String k) => (v[k] ?? '').trim();
+    u.members = t('members');
+    u.pets = t('pets');
+    u.vehicles = t('vehicles');
+    u.emergencyName = t('emergencyName');
+    u.emergencyRelation = t('emergencyRelation');
+    u.emergencyPhone = t('emergencyPhone');
+    u.residents = residents;
+    u.selfUpdated = DateTime.now().millisecondsSinceEpoch;
+    u.selfBy = me?.name ?? 'the resident';
+    logActivity('Resident updated household record, ${u.unit}', 'Units');
+    _n();
+  }
+
+  /// Admin: saves the household record of a unit. The resident sees it on their dashboard.
+  void saveRecord(Unit u, Map<String, String> v, {int residents = 0}) {
+    String t(String k) => (v[k] ?? '').trim();
+    u.name = t('name').isEmpty ? '—' : t('name');
+    u.type = t('type').isEmpty ? u.type : t('type');
+    u.contact = t('contact').isEmpty ? '—' : t('contact');
+    u.email = t('email');
+    u.moveIn = t('moveIn');
+    u.members = t('members');
+    u.pets = t('pets');
+    u.vehicles = t('vehicles');
+    u.emergencyName = t('emergencyName');
+    u.emergencyRelation = t('emergencyRelation');
+    u.emergencyPhone = t('emergencyPhone');
+    u.noteResident = t('noteResident');
+    u.noteOffice = t('noteOffice');
+    u.residents = residents;
+    u.profileUpdated = DateTime.now().millisecondsSinceEpoch;
+    u.profileBy = adminName;
+    logActivity('Resident record updated, ${u.unit}', 'Units');
+    _n();
+  }
 
   /// Writes a rental on a slot: who has it, the plan, the dates and the charge.
   void _stamp(ParkingSlot s, String unit, String plan, int days, num amount) {
@@ -1299,6 +2478,75 @@ class AppState extends ChangeNotifier {
 
   /// Confirms a parking request and assigns the slot.
   void confirmParking(ParkingReq p) => assignRequest(p);
+
+  /// Admin: changes a resident's request (the slot, the rental and the amount). Returns an error text or null.
+  String? editParkingRequest(ParkingReq p, String slotId, String plan, int days, String amountRaw) {
+    if (p.confirmed) return 'This request was already handled.';
+    final daily = plan == 'day';
+    if (daily && (days < 1 || days > 365)) return 'Enter 1 to 365 days.';
+    if (slotId.isNotEmpty && slotId != p.slot) {
+      final sl = slots.where((x) => x.id == slotId).firstOrNull;
+      final holder = heldSlots[slotId];
+      if (sl == null || sl.used || (holder != null && holder != p.unit)) return '$slotId is not free.';
+    }
+    final quote = parkAmount(plan, days, size: slotId.isEmpty ? 'Regular' : slotSize(slotId));
+    final typed = double.tryParse(amountRaw.trim().replaceAll(',', ''));
+    final changed = slotId != p.slot || plan != p.plan || (daily && days != p.days);
+    final amount = (typed != null && typed > 0 && typed != p.amount) ? typed : (changed ? quote : (p.amount > 0 ? p.amount : quote));
+    final old = p.slot;
+    p.slot = slotId;
+    p.plan = daily ? 'day' : 'month';
+    p.days = daily ? days : 0;
+    p.amount = amount;
+    if (slotId != old && old.isNotEmpty) {
+      final pr = parkingProofFor(p.unit, old);
+      if (pr != null && pr.status == 'Pending') pr.slot = slotId;
+    }
+    logActivity('Parking request edited, ${p.unit} (${slotId.isEmpty ? 'no slot' : slotId}, ${parkPlanText(p.plan, p.days)}, ${peso(amount)})', 'Parking');
+    _n();
+    return null;
+  }
+
+  /// Admin: changes a current rental (who has the slot, monthly or daily, the dates and the amount).
+  String? editRental(ParkingSlot s, {required String unitRaw, required String plan, required String fromRaw, required String untilRaw, required String amountRaw}) {
+    String norm(String t) => t.toLowerCase().replaceAll('unit', '').replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final key = norm(unitRaw);
+    final u = key.isEmpty ? null : units.where((x) => norm(x.unit) == key).firstOrNull;
+    if (u == null) return 'No unit with that name. Use a name such as "Unit 12A".';
+    if (u.unit != s.unit && slotOf(u.unit) != null) return '${u.unit} already has a slot.';
+    final from = parseShortDate(fromRaw);
+    if (from == null) return 'Enter the start date, like ${shortDate(DateTime.now())}.';
+    final untilText = untilRaw.trim();
+    final until = untilText.isEmpty ? null : parseShortDate(untilText);
+    if (untilText.isNotEmpty && until == null) return 'Enter the end date, like ${shortDate(DateTime.now())}.';
+    if (until != null && until.isBefore(from)) return 'The end date must be on or after the start date.';
+    final amt = amountRaw.trim().isEmpty ? 0.0 : double.tryParse(amountRaw.trim().replaceAll(',', ''));
+    if (amt == null || amt < 0) return 'Enter a valid amount.';
+    final daily = plan == 'day';
+    s.unit = u.unit;
+    s.plan = daily ? 'day' : 'month';
+    s.from = isoDay(from);
+    s.until = until != null ? isoDay(until) : parkUntil(s.plan, 1, from);
+    s.amount = amt;
+    logActivity('Parking rental edited: ${s.id} · ${u.unit} (${daily ? 'daily' : 'monthly'}, ${isoShort(s.from)} to ${isoShort(s.until)})', 'Parking');
+    _n();
+    return null;
+  }
+
+  /// Admin: the resident paid at the office. Records that payment (with a receipt) and assigns the reserved slot.
+  String? parkingOfficePayment(ParkingReq p, String amountRaw, String ref, {String via = 'Cash'}) {
+    if (p.confirmed || p.slot.isEmpty) return 'This request was already handled.';
+    final amt = double.tryParse(amountRaw.trim().replaceAll(',', ''));
+    if (amt == null || amt <= 0) return 'Enter the amount received.';
+    final sl = slots.where((x) => x.id == p.slot).firstOrNull;
+    if (sl == null || sl.used) return '${p.slot} is already taken.';
+    final id = nextId();
+    final proof = PaymentProof(id, p.unit, p.name, walkinMethod(via), ref.trim().isEmpty ? 'OFFICE-$id' : ref.trim(), shortDate(DateTime.now()), amt,
+        forText: parkingPayFor, slot: p.slot, at: DateTime.now().millisecondsSinceEpoch, paidOn: shortDate(DateTime.now()));
+    proofs.insert(0, proof);
+    confirmProof(proof);
+    return null;
+  }
 
   /// Declines a parking request.
   void declineParking(ParkingReq p) {
@@ -1348,30 +2596,179 @@ class AppState extends ChangeNotifier {
     final s = slots.where((x) => x.id == id).firstOrNull;
     if (s == null || s.used || heldSlots.containsKey(id)) return 'That slot was just taken. Please pick another.';
     final daily = plan == 'day';
-    if (daily && motorRateDay <= 0) return 'Daily rental is not available yet.';
+    if (daily && parkRatesFor(s.size).day <= 0) return 'Daily rental is not available yet.';
     if (daily && (days < 1 || days > 365)) return 'Enter 1 to 365 days.';
     final d = daily ? days : 0;
-    parking.add(ParkingReq(myUnit, myHousehold, slot: id, amount: parkAmount(plan, d), plan: daily ? 'day' : 'month', days: d));
+    parking.add(ParkingReq(myUnit, myHousehold, slot: id, amount: parkAmount(plan, d, size: s.size), plan: daily ? 'day' : 'month', days: d));
     logActivity('Motor parking slot $id reserved (${parkPlanText(daily ? 'day' : 'month', d)}), $myUnit', 'Parking');
     _n();
     return null;
   }
 
   /// Resident: "I have paid" for the reserved slot.
-  String? submitParkingProof(String method, String reference) {
+  String? submitParkingProof(String method, String reference, {String image = '', String paidOn = ''}) {
     final r = myParkingReq;
     if (r == null || r.slot.isEmpty || r.amount <= 0) return 'Reserve a slot first.';
     if (reference.trim().length < 4) return 'Enter the reference number from your receipt or transaction.';
+    final paidDay = parseShortDate(paidOn.trim());
+    if (paidDay == null) return 'Enter the date you paid, like ${shortDate(DateTime.now())}.';
+    if (paidDay.isAfter(DateTime.now())) return 'The date you paid cannot be in the future.';
     if (proofs.any((p) => p.unit == myUnit && p.status != 'Rejected' && p.method == method && p.reference.toLowerCase() == reference.trim().toLowerCase())) {
       return 'That reference number was already submitted.';
     }
     proofs.insert(
         0,
         PaymentProof(nextId(), myUnit, myHousehold, method, reference.trim(), shortDate(DateTime.now()), r.amount,
-            forText: parkingPayFor, slot: r.slot));
+            forText: parkingPayFor, slot: r.slot, at: DateTime.now().millisecondsSinceEpoch, image: image, paidOn: shortDate(paidDay)));
     logActivity('Payment reference sent, $myUnit', 'Finance');
     _n();
     return null;
+  }
+
+  // ---- walk-in, renewal and text messages (motor parking) ----
+
+  /// Residents who said they will pay at the office, residents who said they will not renew (unit -> note), and the texts sent.
+  final List<Walkin> walkins = [];
+  final Map<String, String> leaveNotes = {};
+  final List<SmsMsg> smsLog = [];
+
+  /// What the last text did, for the message shown to the administrator ("A text was sent to 0917 ...").
+  String lastSmsNote = '';
+
+  /// How the office can take a walk-in payment, and the method name written on the receipt.
+  static const walkinOptions = ['Cash', 'Check', 'Card (debit or credit)', 'E-wallet (GCash or Maya)'];
+  static String walkinMethod(String via) => via.startsWith('Card') ? 'Card at the office' : (via.startsWith('E-wallet') ? 'E-wallet at the office' : officePay);
+
+  Walkin? walkinOf(String unit, {bool renew = false}) {
+    for (final w in walkins) {
+      if (w.unit == unit && w.renew == renew) return w;
+    }
+    return null;
+  }
+
+  /// "Unit 3B will come to the office today." / "... said they would come on Oct 27, 2026 and has not been recorded yet."
+  String walkinText(Walkin w, String who) =>
+      w.day == isoDay(DateTime.now()) ? '$who will come to the office today.' : '$who said they would come on ${isoShort(w.day)} and has not been recorded yet.';
+
+  /// The renewal payment of a unit that waits for the office, or null.
+  PaymentProof? renewProofOf(String unit, String slot) {
+    for (final p in proofs) {
+      if (p.unit == unit && p.forText == parkingPayFor && p.renew && p.slot == slot && p.status == 'Pending') return p;
+    }
+    return null;
+  }
+
+  /// What a monthly renewal costs: what the unit pays now, else the rate of the slot size.
+  num parkRenewAmount(ParkingSlot s) => s.amount > 0 ? s.amount : parkRatesFor(s.size).month;
+
+  /// Resident: "I'll walk in today". Tells the office to expect them (for the reserved slot, or [renew] for the rental).
+  String? parkWalkIn({bool renew = false}) {
+    final String slotId;
+    final num amount;
+    if (renew) {
+      final s = slotOf(myUnit);
+      if (s == null) return 'You do not have a parking slot to renew.';
+      slotId = s.id;
+      amount = parkRenewAmount(s);
+    } else {
+      final r = myParkingReq;
+      if (r == null || r.slot.isEmpty) return 'Reserve a slot first.';
+      slotId = r.slot;
+      amount = r.amount;
+    }
+    walkins.removeWhere((w) => w.unit == myUnit && w.renew == renew);
+    walkins.add(Walkin(myUnit, myHousehold, slotId, amount, renew, isoDay(DateTime.now()), DateTime.now().millisecondsSinceEpoch));
+    logActivity('Walk-in payment announced, $myUnit ($slotId)', 'Parking');
+    _n();
+    return null;
+  }
+
+  void parkWalkInCancel({bool renew = false}) {
+    walkins.removeWhere((w) => w.unit == myUnit && w.renew == renew);
+    _n();
+  }
+
+  /// Resident: "I won't renew". The slot stays theirs until the rental ends.
+  String? parkLeave(String note) {
+    final s = slotOf(myUnit);
+    if (s == null) return 'You do not have a parking slot.';
+    leaveNotes[myUnit] = note.trim();
+    logActivity('Will not renew parking: $myUnit (${s.id})', 'Parking');
+    _n();
+    return null;
+  }
+
+  void parkLeaveUndo() {
+    leaveNotes.remove(myUnit);
+    _n();
+  }
+
+  /// Resident: "I have paid" to renew the monthly rental.
+  String? submitParkingRenewProof(String method, String reference, {String image = '', String paidOn = ''}) {
+    final s = slotOf(myUnit);
+    if (s == null) return 'You do not have a parking slot to renew.';
+    if (renewProofOf(myUnit, s.id) != null) return 'Your renewal payment was already sent. The office will check it.';
+    if (reference.trim().length < 4) return 'Enter the reference number from your receipt or transaction.';
+    final paidDay = parseShortDate(paidOn.trim());
+    if (paidDay == null) return 'Enter the date you paid, like ${shortDate(DateTime.now())}.';
+    if (paidDay.isAfter(DateTime.now())) return 'The date you paid cannot be in the future.';
+    if (proofs.any((p) => p.unit == myUnit && p.status != 'Rejected' && p.method == method && p.reference.toLowerCase() == reference.trim().toLowerCase())) {
+      return 'That reference number was already submitted.';
+    }
+    proofs.insert(
+        0,
+        PaymentProof(nextId(), myUnit, myHousehold, method, reference.trim(), shortDate(DateTime.now()), parkRenewAmount(s),
+            forText: parkingPayFor, slot: s.id, renew: true, at: DateTime.now().millisecondsSinceEpoch, image: image, paidOn: shortDate(paidDay)));
+    logActivity('Renewal payment sent, $myUnit', 'Finance');
+    _n();
+    return null;
+  }
+
+  /// Admin: rentals that need the office: a renewal payment waiting, a walk-in announced, or a resident who will not renew.
+  List<({ParkingSlot slot, PaymentProof? proof, Walkin? walkin, String? leave})> get parkRenewals {
+    final out = <({ParkingSlot slot, PaymentProof? proof, Walkin? walkin, String? leave})>[];
+    for (final s in slots) {
+      if (!s.used || s.daily) continue;
+      final pr = renewProofOf(s.unit, s.id);
+      final w = walkinOf(s.unit, renew: true);
+      final l = leaveNotes[s.unit];
+      if (pr != null || w != null || l != null) out.add((slot: s, proof: pr, walkin: w, leave: l));
+    }
+    return out;
+  }
+
+  /// "Sends" a text to a unit. The prototype only saves it; a real SMS service would deliver it from here.
+  void sendSms(String unit, String text) {
+    final phone = unitPhone(unit);
+    smsLog.insert(0, SmsMsg(nextId(), unit, phone, text, DateTime.now().millisecondsSinceEpoch, phone.isEmpty ? 'No number' : 'Sent'));
+    lastSmsNote = phone.isEmpty ? 'No mobile number is on file for $unit, so no text was sent.' : 'A text was sent to $phone.';
+    logActivity('Text ${phone.isEmpty ? 'not sent to $unit (no mobile number)' : 'sent to $unit ($phone)'}: $text', 'Parking');
+  }
+
+  /// The text a resident gets when their parking payment is approved: the rental period and the next due date.
+  String approvedSmsText(ParkingSlot s, String receipt, num amount, bool renewed) {
+    final d = parkDueOf(s);
+    return 'ResidentHub: Your parking payment of ${peso(amount)} is approved. Slot ${s.id} is ${renewed ? 'renewed' : 'yours'} until ${isoShort(s.until)}.'
+        '${d != null ? ' Next payment due: ${isoShort(d.nextDue)}.' : ' This daily rental ends on ${isoShort(s.until)}.'} Receipt $receipt. Thank you!';
+  }
+
+  /// Admin: a resident renews at the office. Records the payment (receipt), extends the rental and texts the resident.
+  String? parkingRenewOfficePayment(ParkingSlot s, String amountRaw, String via, String ref) {
+    if (!s.used || s.daily) return 'This rental changed. Close this and try again.';
+    final amt = double.tryParse(amountRaw.trim().replaceAll(',', ''));
+    if (amt == null || amt <= 0) return 'Enter the amount received.';
+    final id = nextId();
+    final proof = PaymentProof(id, s.unit, whoOfUnit(s.unit), walkinMethod(via), ref.trim().isEmpty ? 'OFFICE-$id' : ref.trim(), shortDate(DateTime.now()), amt,
+        forText: parkingPayFor, slot: s.id, renew: true, at: DateTime.now().millisecondsSinceEpoch, paidOn: shortDate(DateTime.now()));
+    proofs.insert(0, proof);
+    confirmProof(proof);
+    return null;
+  }
+
+  /// The household name of a unit (or the unit name).
+  String whoOfUnit(String unit) {
+    final u = units.where((x) => x.unit == unit).firstOrNull;
+    return (u == null || u.name.isEmpty || u.name == '—') ? unit : u.name;
   }
 
   /// How many parking slots are rented.
@@ -1386,7 +2783,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// Admin: adds [raw] more motor parking slots (M-01, M-02, ...). New names never reuse a name that is taken.
-  String? addSlots(String raw) {
+  String? addSlots(String raw, {String size = 'Regular'}) {
     final n = int.tryParse(raw.trim());
     if (n == null || n < 1 || n > 200) return 'Enter how many slots to add (1 to 200).';
     final taken = {for (final s in slots) s.id};
@@ -1400,7 +2797,7 @@ class AppState extends ChangeNotifier {
       top++;
       final id = 'M-${top.toString().padLeft(2, '0')}';
       if (taken.add(id)) {
-        slots.add(ParkingSlot(id));
+        slots.add(ParkingSlot(id)..size = size);
         added++;
       }
     }
@@ -1417,7 +2814,7 @@ class AppState extends ChangeNotifier {
     if (name == s.id) return null;
     if (slots.any((x) => x != s && x.id.toLowerCase() == name.toLowerCase())) return '$name already exists.';
     final i = slots.indexOf(s);
-    final renamed = ParkingSlot(name, s.unit, s.plan, s.from, s.until, s.amount);
+    final renamed = ParkingSlot(name, s.unit, s.plan, s.from, s.until, s.amount)..size = s.size;
     slots[i] = renamed;
     slots.sort((a, b) => naturalCompare(a.id, b.id));
     logActivity('Parking slot ${s.id} renamed to $name', 'Parking');
@@ -1467,57 +2864,252 @@ class AppState extends ChangeNotifier {
       ..until = ''
       ..amount = 0;
     if (unit.isNotEmpty) parking.removeWhere((r) => r.unit == unit);
+    walkins.removeWhere((w) => w.unit == unit && w.renew);
+    leaveNotes.remove(unit);
     logActivity('Parking rental ended: $unit removed from ${s.id}', 'Parking');
     _n();
   }
 
-  // ---- polls (admin publishes, residents vote once per unit) ----
+  // ---- polls and elections (admin publishes, residents vote once per unit) ----
   final List<Poll> polls = [];
-  final Map<String, int> _votes = {}; // '<unit>|<pollId>' -> option index
+  final Map<String, PollBallot> _ballots = {}; // '<unit>|<pollId>' -> that unit's ballot
 
-  /// The option my unit voted for in a poll, or null.
-  int? myVote(int pollId) => _votes['$myUnit|$pollId'];
+  /// The categories the administrator manages (General is always there).
+  final List<String> pollCats = [...pollBuiltInCategories];
+
+  /// The categories to choose from: the managed list plus any a poll already uses.
+  List<String> get pollCategoryChoices {
+    final out = [...pollCats];
+    if (!out.contains('General')) out.insert(0, 'General');
+    for (final p in polls) {
+      if (p.category.isNotEmpty && !out.contains(p.category)) out.add(p.category);
+    }
+    return out;
+  }
+
+  /// My unit's ballot in a poll, or null.
+  PollBallot? myBallot(int pollId) => _ballots['$myUnit|$pollId'];
+
   /// How many open polls my unit has not voted in.
-  int get pollsToVote => polls.where((p) => p.open && myVote(p.id) == null).length;
+  int get pollsToVote => polls.where((p) => p.open && myBallot(p.id) == null).length;
+
   /// How many polls are open.
   int get openPolls => polls.where((p) => p.open).length;
 
-  /// Saves my unit's vote (returns an error text if not allowed).
-  String? castVote(Poll p, int option) {
+  /// The ballots cast in a poll (newest first).
+  List<PollBallot> ballotsOf(Poll p) =>
+      [for (final b in _ballots.values) if (b.poll == p.id) b]..sort((a, b) => b.at.compareTo(a.at));
+
+  /// Counts every ballot into the results of every poll.
+  void recountPolls() {
+    for (final p in polls) {
+      p.ballots = 0;
+      for (final q in p.questions) {
+        q.counts = List<int>.filled(q.options.length, 0);
+        q.n = 0;
+        q.ratingSum = 0;
+        q.stars = [0, 0, 0, 0, 0];
+        q.written = [];
+      }
+    }
+    final byId = {for (final p in polls) p.id: p};
+    for (final b in _ballots.values) {
+      final p = byId[b.poll];
+      if (p == null) continue;
+      p.ballots++;
+      for (final q in p.questions) {
+        final v = b.answers[q.id];
+        if (v == null || v == '') continue;
+        if (q.type == 'choice') {
+          final i = v is num ? v.toInt() : -1;
+          if (i >= 0 && i < q.counts.length) {
+            q.counts[i]++;
+            q.n++;
+          }
+        } else if (q.type == 'multi') {
+          var any = false;
+          for (final x in (v is List ? v : [v])) {
+            final i = x is num ? x.toInt() : -1;
+            if (i >= 0 && i < q.counts.length) {
+              q.counts[i]++;
+              any = true;
+            }
+          }
+          if (any) q.n++;
+        } else if (q.type == 'rating') {
+          final r = v is num ? v.toInt() : 0;
+          if (r >= 1 && r <= 5) {
+            q.stars[r - 1]++;
+            q.ratingSum += r;
+            q.n++;
+          }
+        } else {
+          q.written.add(PollAnswer(b.unit, v.toString()));
+          q.n++;
+        }
+      }
+    }
+  }
+
+  /// For one choice question of an election: 'Elected', 'Tie' or '' for each candidate (only once it has closed).
+  List<String> electedStatus(Poll p, PollQuestion q) {
+    final seats = p.isElection ? (q.max < 1 ? 1 : q.max) : 0;
+    final sorted = [...q.counts]..sort((a, b) => b.compareTo(a));
+    final cut = seats > 0 && seats <= sorted.length ? sorted[seats - 1] : 0;
+    final above = seats > 0 ? sorted.where((v) => v > cut).length : 0;
+    final atCut = seats > 0 ? sorted.where((v) => v == cut).length : 0;
+    return [
+      for (final v in q.counts)
+        if (seats == 0 || p.open || v <= 0)
+          ''
+        else if (v > cut)
+          'Elected'
+        else if (v == cut)
+          (atCut > seats - above ? 'Tie' : 'Elected')
+        else
+          '',
+    ];
+  }
+
+  /// Saves my unit's ballot (returns an error text if it is not allowed or not complete).
+  String? castVote(Poll p, Map<String, dynamic> answers) {
     if (!p.open) return 'This poll is closed.';
-    if (myVote(p.id) != null) return 'Your unit has already voted in this poll.';
-    if (option < 0 || option >= p.options.length) return 'Pick an option first.';
-    p.options[option].votes++;
-    _votes['$myUnit|${p.id}'] = option;
-    logActivity('Poll vote from $myUnit: ${p.question}', 'Polls');
+    if (myBallot(p.id) != null) return 'Your unit has already voted in this poll.';
+    final clean = <String, dynamic>{};
+    for (var i = 0; i < p.questions.length; i++) {
+      final q = p.questions[i];
+      final v = answers[q.id];
+      final empty = v == null || v == '' || (v is List && v.isEmpty);
+      if (empty) {
+        if (q.required) return 'Please answer question ${i + 1}.';
+        continue;
+      }
+      if (q.type == 'multi' && q.max > 0 && v is List && v.length > q.max) {
+        return 'Choose at most ${q.max} for ${p.isElection ? '"${q.text}"' : 'question ${i + 1}'}.';
+      }
+      clean[q.id] = v;
+    }
+    if (clean.isEmpty) return p.isElection ? 'Choose at least one candidate, or leave this election.' : 'Answer at least one question first.';
+    _ballots['$myUnit|${p.id}'] = PollBallot(p.id, myUnit, DateTime.now().toIso8601String(), clean);
+    recountPolls();
+    logActivity('${p.isElection ? 'Ballot' : 'Poll vote'} from $myUnit: ${p.question}', 'Polls');
     _n();
     return null;
   }
 
-  /// Creates a poll (returns an error text if invalid).
-  String? addPoll(String question, String optionsRaw) {
-    final opts = optionsRaw.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    if (question.trim().isEmpty || opts.length < 2) return 'Add a question and at least two options (one per line).';
-    final closes = shortDate(DateTime.now().add(const Duration(days: 7)));
-    polls.insert(0, Poll(nextId(), question.trim(), true, closes, [for (final o in opts) PollOption(o, 0)]));
-    logActivity('Poll published: ${question.trim()}', 'Polls');
+  /// Creates a poll or election (returns an error text if something is missing).
+  String? publishPoll({
+    required String kind,
+    required String category,
+    required String titleHtml,
+    required String descHtml,
+    required String closeKey,
+    required String showResults,
+    required List<PollQuestion> questions,
+  }) {
+    final el = kind == 'election';
+    final title = RtDoc.fromHtml(titleHtml).plain;
+    if (title.isEmpty) return 'Give it a title first.';
+    if (questions.isEmpty) return el ? 'Add at least one position.' : 'Add at least one question.';
+    final qs = <PollQuestion>[];
+    for (var i = 0; i < questions.length; i++) {
+      final q = questions[i];
+      final text = RtDoc.fromHtml(q.html).plain;
+      if (text.isEmpty) return '${el ? 'Position' : 'Question'} ${i + 1} needs a name.';
+      final opts = [for (final o in q.options) if (o.trim().isNotEmpty) o.trim()];
+      final type = el ? (q.max > 1 ? 'multi' : 'choice') : q.type;
+      final choice = type == 'choice' || type == 'multi';
+      if (choice && opts.length < (el ? 1 : 2)) {
+        return el ? 'Add at least one candidate for "$text".' : 'Add at least two options for "$text".';
+      }
+      qs.add(PollQuestion('q${i + 1}', type, q.html, text, q.required, el ? (q.max < 1 ? 1 : q.max) : (type == 'multi' ? q.max : 0), choice ? opts : []));
+    }
+    final end = DateTime.tryParse(closeKey);
+    if (end == null || closeKey.compareTo(isoDay(DateTime.now())) < 0) return 'Pick a closing date that is today or later.';
+    polls.insert(
+        0,
+        Poll(nextId(), title, true, shortDate(end), qs,
+            kind: kind, category: category.isEmpty ? 'General' : category, titleHtml: titleHtml, descHtml: descHtml, closeKey: closeKey, showResults: showResults));
+    recountPolls();
+    logActivity('${el ? 'Election opened' : 'Poll published'}: $title', 'Polls');
     _n();
     return null;
   }
 
-  /// Opens or closes a poll.
+  /// Opens or closes a poll (reopening gives it another week).
   void togglePoll(Poll p) {
-    p.open = !p.open;
-    logActivity('Poll ${p.open ? 'reopened' : 'closed'}: ${p.question}', 'Polls');
+    final next = !p.open;
+    p.open = next;
+    if (next) {
+      final end = DateTime.now().add(const Duration(days: 7));
+      p.closeKey = isoDay(end);
+      p.closes = shortDate(end);
+    } else if (p.closeKey.isNotEmpty && p.closeKey.compareTo(isoDay(DateTime.now())) >= 0) {
+      p.closes = shortDate(DateTime.now());
+    }
+    logActivity('${p.isElection ? 'Election' : 'Poll'} ${next ? 'reopened' : 'closed'}: ${p.question}', 'Polls');
     _n();
   }
 
-  /// Deletes a poll.
+  /// Deletes a poll and its ballots.
   void deletePoll(Poll p) {
     polls.remove(p);
-    _votes.removeWhere((k, _) => k.endsWith('|${p.id}'));
+    _ballots.removeWhere((k, b) => b.poll == p.id);
     logActivity('Poll deleted: ${p.question}', 'Polls');
     _n();
+  }
+
+  // ---- poll categories ----
+  String? _catName(String raw) {
+    final name = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (name.isEmpty) return null;
+    return name;
+  }
+
+  /// Adds a category (returns an error text, or null when it was added).
+  String? addPollCategory(String raw) {
+    final name = _catName(raw);
+    if (name == null) return 'Type a category name.';
+    if (name.length > 40) return 'Keep the name under 40 characters.';
+    if (pollCategoryChoices.any((c) => c.toLowerCase() == name.toLowerCase())) return 'That category already exists.';
+    pollCats.add(name);
+    logActivity('Poll category added: $name', 'Polls');
+    _n();
+    return null;
+  }
+
+  /// Renames a category everywhere it is used.
+  String? renamePollCategory(String old, String raw) {
+    if (old == 'General') return 'General is the default category and cannot be renamed.';
+    final name = _catName(raw);
+    if (name == null) return 'Type a category name.';
+    if (name.length > 40) return 'Keep the name under 40 characters.';
+    if (name == old) return null;
+    if (pollCategoryChoices.any((c) => c != old && c.toLowerCase() == name.toLowerCase())) return 'That category already exists.';
+    final i = pollCats.indexOf(old);
+    if (i >= 0) {
+      pollCats[i] = name;
+    } else {
+      pollCats.add(name);
+    }
+    for (final p in polls.where((p) => p.category == old)) {
+      p.category = name;
+    }
+    logActivity('Poll category renamed: $old to $name', 'Polls');
+    _n();
+    return null;
+  }
+
+  /// Removes a category; its polls move to General.
+  String? removePollCategory(String name) {
+    if (name == 'General') return 'General is the default category and cannot be removed.';
+    pollCats.remove(name);
+    for (final p in polls.where((p) => p.category == name)) {
+      p.category = 'General';
+    }
+    logActivity('Poll category removed: $name', 'Polls');
+    _n();
+    return null;
   }
 
   // ---- events (residents say they are going) ----
@@ -1568,12 +3160,52 @@ class AppState extends ChangeNotifier {
   }
 
   /// Creates an announcement (and can text the residents).
-  void addAnnouncement(String title, String body, String type, bool sms, {List<String>? units}) {
+  void addAnnouncement(String title, String body, String type, bool sms, {List<String>? units, bool draft = false}) {
     announcements.insert(
         0,
         Announcement(nextId(), title, body.isEmpty ? '—' : body, shortDate(DateTime.now()),
-            'Published', type, sms, units: units));
-    logActivity('Announcement published: $title', 'Announcements');
+            draft ? 'Draft' : 'Published', type, sms, units: units));
+    logActivity(draft ? 'Announcement saved as draft: $title' : 'Announcement published: $title', 'Announcements');
+    _n();
+  }
+
+  /// Compose window: keeps what was typed as a draft (like Gmail). Returns the draft's id (0 when there was nothing to keep).
+  /// Pass the id of an earlier save to update the same draft.
+  int saveAnnouncementDraft(int id, String title, String body, String type) {
+    final t = title.trim(), b = body.trim();
+    if (t.isEmpty && b.isEmpty) return id;
+    if (id != 0) {
+      final i = announcements.indexWhere((a) => a.id == id);
+      if (i >= 0) {
+        final a = announcements[i];
+        a.title = t.isEmpty ? '(no title)' : t;
+        a.body = b.isEmpty ? '—' : b;
+        a.type = type;
+        _n();
+        return id;
+      }
+    }
+    final n = nextId();
+    announcements.insert(0, Announcement(n, t.isEmpty ? '(no title)' : t, b.isEmpty ? '—' : b, shortDate(DateTime.now()), 'Draft', type, false));
+    logActivity('Announcement saved as draft: ${t.isEmpty ? '(no title)' : t}', 'Announcements');
+    _n();
+    return n;
+  }
+
+  /// Publishes a draft (or updates a published announcement) from the compose window.
+  void publishAnnouncementFrom(int id, String title, String body, String type, {bool sms = false}) {
+    final i = announcements.indexWhere((a) => a.id == id);
+    if (i < 0) return;
+    final a = announcements[i];
+    a.title = title.trim();
+    a.body = body.trim().isEmpty ? '—' : body.trim();
+    a.type = type;
+    a.sms = sms;
+    if (a.status != 'Published') {
+      a.status = 'Published';
+      a.date = shortDate(DateTime.now());
+      logActivity('Announcement published: ${a.title}', 'Announcements');
+    }
     _n();
   }
 

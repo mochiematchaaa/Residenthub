@@ -7,7 +7,10 @@ import '../core/core.dart';
 /// The demo is NOT connected to any database. It starts with made-up people, units, dues, bookings
 /// and announcements (the same sample data as the website demo, with dates built around today).
 /// Everything the visitor changes stays in memory and is gone when the page is closed.
-const bool kDemo = bool.fromEnvironment('DEMO');
+/// Prototype build: `flutter build web --dart-define=PROTOTYPE=true`. Same front end with sample data and no database,
+/// but without the "demo" wording on screen.
+const bool kPrototype = bool.fromEnvironment('PROTOTYPE');
+const bool kDemo = bool.fromEnvironment('DEMO') || kPrototype;
 
 /// The demo and the prototype start EMPTY, so the import can be tried on empty lists.
 /// Build with `--dart-define=SAMPLE=true` to get the made-up sample data back.
@@ -22,7 +25,7 @@ const String kDemoResidentPhone = '0917 000 1108';
 
 
 /// Message for things that need a real server (passwords, accounts, text-message codes).
-const String kDemoOff = 'This is a demo, so this is turned off.';
+const String kDemoOff = kPrototype ? 'This feature is not available in the prototype.' : 'This is a demo, so this is turned off.';
 
 /// Signs in as the demo administrator or the demo resident, with an email address.
 /// Returns an error message, or null.
@@ -33,6 +36,7 @@ String? demoSignIn(String idRaw, String pass) {
   final admin = id == kDemoAdminEmail;
   final resident = id == kDemoResidentEmail;
   if (pass != kDemoPassword || (!admin && !resident)) {
+    if (kPrototype) return 'Sign-in details not recognized. Use Quick access below.';
     return 'Demo logins: $kDemoAdminEmail (administrator), $kDemoResidentEmail (resident). Password $kDemoPassword.';
   }
   startDemo(admin ? Role.admin : Role.resident);
@@ -46,7 +50,7 @@ void startDemo(Role role) {
   app.enterSession(
     role: role,
     id: admin ? 'demo-admin' : 'demo-u2',
-    name: admin ? 'Demo Administrator' : 'Maria Reyes',
+    name: admin ? (kPrototype ? 'Administrator' : 'Demo Administrator') : 'Maria Reyes',
     email: admin ? kDemoAdminEmail : kDemoResidentEmail,
     phone: admin ? kDemoAdminPhone : kDemoResidentPhone,
     unit: unit,
@@ -134,6 +138,15 @@ const _firstNames = [
   'Lyn', 'Gerald', 'Trixie', 'Albert', 'Sheila', 'Dante',
 ];
 
+/// Floor area in sqm: A smaller, C larger, upper floors a little bigger (same as the website).
+int _areaOf(String label) {
+  final l = label.substring(label.length - 1);
+  final f = int.tryParse(label.substring(5, label.length - 1)) ?? 1;
+  return (l == 'A' ? 32 : (l == 'B' ? 45 : (l == 'C' ? 60 : 40))) + (f >= 9 ? 8 : 0);
+}
+
+const _sqmRate = 50;
+
 class _DemoUnit {
   final int i;
   final String label, house, type, status, contact, person, key;
@@ -160,8 +173,26 @@ List<_DemoUnit> _demoUnits() {
 List<Account> _demoAccounts() {
   final added = _sd(_off(-60));
   final occ = _demoUnits().where((u) => u.occupied).take(24).toList();
+  final now = DateTime.now();
+  // A few accounts are marked as recently created or changed so the contact list shows New / Updated.
+  const newOnes = {5, 11};
+  const changed = {2: 'Mobile number', 8: 'Email address', 15: 'Unit'};
   return [
-    for (final u in occ) Account('demo-u${u.i}', u.person, '${u.key}@demo.test', u.contact, u.label, 'Resident', added, verified: true),
+    for (var k = 0; k < occ.length; k++)
+      Account('demo-u${occ[k].i}', occ[k].person, '${occ[k].key}@demo.test', occ[k].contact, occ[k].label, 'Resident', added,
+          verified: true,
+          createdAt: newOnes.contains(k) ? now.subtract(Duration(days: k == 5 ? 1 : 3)) : now.subtract(const Duration(days: 60)),
+          updatedAt: newOnes.contains(k)
+              ? now.subtract(Duration(days: k == 5 ? 1 : 3))
+              : (changed.containsKey(k) ? now.subtract(Duration(days: k + 1)) : null),
+          lastChange: newOnes.contains(k) ? 'New account' : (changed[k] ?? ''),
+          history: [
+            if (changed.containsKey(k))
+              AccountChange(now.subtract(Duration(days: k + 1)), changed[k]!,
+                  from: k == 2 ? '0917 555 0102' : (k == 8 ? '${occ[k].key.split('.').first}@oldmail.test' : 'Unit ${1 + (k % 9)}A'),
+                  to: k == 2 ? occ[k].contact : (k == 8 ? '${occ[k].key}@demo.test' : occ[k].label)),
+            AccountChange(newOnes.contains(k) ? now.subtract(Duration(days: k == 5 ? 1 : 3)) : now.subtract(Duration(days: 20 + k)), 'Account created'),
+          ]),
   ];
 }
 
@@ -180,6 +211,8 @@ List<CRow> _demoRows() {
   final occ = units.where((u) => u.occupied).toList();
   final withAcc = occ.take(24).toList();
   final byUnit = <String, Map<String, dynamic>>{};
+  // Every unit has its own due day, so payments come in all through the month.
+  final dueDayOf = <String, int>{for (var i = 0; i < units.length; i++) units[i].label: 1 + (i * 7 + 2) % 28};
   for (final u in units) {
     byUnit[u.label] = <String, dynamic>{
       'unit': u.label,
@@ -187,6 +220,8 @@ List<CRow> _demoRows() {
       'type': u.type,
       'status': u.status,
       'contact': u.contact,
+      'area': _areaOf(u.label),
+      'dueDay': dueDayOf[u.label],
       'usage': u.type == 'Tenant' ? 'tenant' : 'owner',
     };
   }
@@ -198,7 +233,6 @@ List<CRow> _demoRows() {
         'end': _dk(_off(to)),
         'emerg': '${_pick(_firstNames)} ${u.house.split(' ').first}, 0917 000 ${_ri(2000, 2999)}',
         'plates': 'ABC ${_ri(1000, 9999)}',
-        'agree': true,
       };
   final tenants = units.where((u) => u.type == 'Tenant' && u.occupied).toList();
   for (var k = 0; k < tenants.length; k++) {
@@ -235,10 +269,8 @@ List<CRow> _demoRows() {
         'platform': _pick(const ['Airbnb', 'Booking.com', 'Agoda']),
         'contact': u.person,
         'phone': u.contact,
-        'maxGuests': '${_ri(2, 5)}',
         'start': _dk(_off(-_ri(30, 200))),
         'listing': 'Cozy unit with city view',
-        'agree': true,
       };
     } else if (kind == 'business') {
       b['usageInfo'] = <String, dynamic>{
@@ -246,9 +278,7 @@ List<CRow> _demoRows() {
         'btype': _pick(const ['Online selling', 'Tutoring', 'Home office', 'Baking']),
         'permit': 'DTI-${_ri(100000, 999999)}',
         'hours': 'Mon to Fri, 9 AM to 5 PM',
-        'visitors': '${_ri(1, 6)}',
         'phone': u.contact,
-        'agree': true,
       };
     } else {
       b['usageInfo'] = <String, dynamic>{
@@ -257,18 +287,50 @@ List<CRow> _demoRows() {
         'phone': '0917 000 ${_ri(3000, 3999)}',
         'start': _dk(_off(_ri(3, 12))),
         'end': _dk(_off(_ri(20, 45))),
-        'agree': true,
       };
     }
+  }
+  // sample household records (no random numbers, so the other sample data does not change)
+  for (var k = 0; k < units.length; k++) {
+    final u = units[k];
+    if (u.status != 'Occupied') continue;
+    final b = byUnit[u.label]!;
+    final last = u.person.split(' ').last;
+    final n = 1 + (k % 4);
+    const first = ['Elena', 'Paolo', 'Rhea', 'Carlo', 'Liza', 'Marco', 'Rico', 'Maria', 'Jenny', 'Noel', 'Cathy', 'Dennis', 'Joy', 'Ben', 'Grace'];
+    b['email'] = u.key + '@demo.test';
+    b['residents'] = n;
+    b['moveIn'] = _dk(_off(-(120 + (k * 53) % 1300)));
+    b['members'] = '${u.person}, ${u.type == 'Tenant' ? 'tenant' : 'owner'}'
+        '${n > 1 ? '\n${first[(k * 3 + 1) % first.length]} $last, family' : ''}'
+        '${n > 2 ? '\n${first[(k * 5 + 2) % first.length]} $last, child' : ''}';
+    b['emergencyName'] = '${first[(k * 7 + 3) % first.length]} $last';
+    b['emergencyRelation'] = const ['Sister', 'Brother', 'Parent', 'Spouse', 'Friend'][k % 5];
+    b['emergencyPhone'] = '0917 000 ${3000 + (k * 37) % 900}';
+    if (k % 3 == 0) b['vehicles'] = 'Motorcycle · ${String.fromCharCode(65 + k % 26)}BC ${1000 + (k * 411) % 9000}';
+    if (k % 5 == 0) b['pets'] = '1 dog';
+    if (k == 0) {
+      b['noteResident'] = 'Your parking sticker is ready for pickup at the office.';
+      b['noteOffice'] = 'Pays at the office on the first week of the month.';
+    }
+    b['profileUpdated'] = DateTime.now().millisecondsSinceEpoch - (1 + (k * 3) % 20) * 86400000;
+    b['profileBy'] = 'Administrator';
   }
   for (final u in units) {
     r('unit', u.label, u.label, byUnit[u.label]!);
   }
 
   // ---- settings
-  r('setting', 'dues_rate', '', {'rate': 2500});
+  r('setting', 'dues_rate_sqm', '', {'rate': _sqmRate});
   r('setting', 'motor_rate', '', {'rate': 1500});
   r('setting', 'motor_rate_daily', '', {'rate': 100});
+  r('setting', 'park_sizes', '', {
+    'list': [
+      {'name': 'Small', 'sqm': 2, 'month': 1000, 'day': 70},
+      {'name': 'Regular', 'sqm': 3, 'month': 1500, 'day': 100},
+      {'name': 'Large', 'sqm': 4.5, 'month': 2200, 'day': 150},
+    ]
+  });
   r('setting', 'paymethods', '', {
     'list': [
       {'name': 'Cash or check at the office', 'details': 'Pay at the administration office, Monday to Saturday, 8 AM to 5 PM.', 'enabled': true},
@@ -306,21 +368,26 @@ List<CRow> _demoRows() {
   for (var hi = 0; hi < occ.length; hi++) {
     final u = occ[hi];
     for (final off in const [-2, -1, 0]) {
-      final dd = monthDate(off, 25);
+      final dueDay = dueDayOf[u.label] ?? 25;
+      final dd = monthDate(off, dueDay);
       final note = 'Association dues - ${_monLong[dd.month - 1]} ${dd.year}';
       final idn = DateTime(dd.year, dd.month, 1, 9).millisecondsSinceEpoch + hi;
       final bool paid = off < 0 ? !(off == -1 && hi % 9 == 3) && !(off == -2 && hi % 23 == 5) : (hi % 5 == 0 || hi % 5 == 2);
+      final amt = _areaOf(u.label) * _sqmRate;
       r('due', idn, u.label, {
         'id': idn,
         'unit': u.label,
         'name': u.house,
-        'amount': 2500,
+        'amount': amt,
+        'area': _areaOf(u.label),
+        'rate': _sqmRate,
+        'billedOn': _sd(DateTime(dd.year, dd.month, 1, 9)),
         'note': note,
         'dueDate': _sd(dd),
         if (paid) 'paid': true,
       });
       if (paid) {
-        var pd = monthDate(off, 3 + (hi * 3 + off * 5 + 40) % 17);
+        var pd = monthDate(off, dueDay - (hi % 4) < 1 ? 1 : dueDay - (hi % 4));
         if (pd.isAfter(now)) {
           pd = DateTime(now.year, now.month, now.day - (hi % 10) > 0 ? now.day - (hi % 10) : 1, 12);
         }
@@ -337,7 +404,7 @@ List<CRow> _demoRows() {
           'method': method,
           'reference': ref,
           'date': _sd(pd),
-          'amount': 2500,
+          'amount': amt,
         });
         r('proof', idn + 7000, u.label, {
           'id': idn + 7000,
@@ -346,7 +413,7 @@ List<CRow> _demoRows() {
           'forText': note,
           'method': method,
           'reference': ref,
-          'amount': 2500,
+          'amount': amt,
           'date': _sd(pd),
           'status': 'Confirmed',
           'receiptNo': no,
@@ -360,8 +427,23 @@ List<CRow> _demoRows() {
           'forText': note,
           'method': 'GCash',
           'reference': 'GC${year * 1000000 + 101400 + hi}',
-          'amount': 2500,
+          'amount': amt,
           'date': _sd(_off(-(hi % 3))),
+          'at': DateTime.now().subtract(Duration(hours: 5 + (hi % 3) * 20)).millisecondsSinceEpoch,
+          'status': 'Pending',
+        });
+      } else if (off == 0 && hi % 11 == 4) {
+        // a payment with the wrong amount: it waits for the office instead of posting by itself
+        r('proof', idn + 7000, u.label, {
+          'id': idn + 7000,
+          'unit': u.label,
+          'payer': u.house,
+          'forText': note,
+          'method': 'GCash',
+          'reference': 'GC${year * 1000000 + 101500 + hi}',
+          'amount': amt - 250,
+          'date': _sd(_off(-1)),
+          'at': DateTime.now().subtract(const Duration(hours: 30)).millisecondsSinceEpoch,
           'status': 'Pending',
         });
       }
@@ -373,20 +455,13 @@ List<CRow> _demoRows() {
         'unit': u.label,
         'name': u.house,
         'amount': 300,
-        'note': 'Parking sticker fee',
+        'billedOn': _sd(_off(-(hi % 4))),
+        'note': 'Motor parking rental',
         'dueDate': _sd(_off(5 + hi % 6)),
       });
     }
   }
-  final sid = tid();
-  r('due', sid, 'Unit 3B', {
-    'id': sid,
-    'unit': 'Unit 3B',
-    'name': byUnit['Unit 3B']!['name'],
-    'amount': 800,
-    'note': 'Special assessment - elevator repair',
-    'dueDate': _sd(_off(9)),
-  });
+  // The elevator repair is paid by the corporation (it is in Expenses), so residents are not billed for it.
 
   // ---- expenses (administrator only), six months
   var rc = 4100;
@@ -472,20 +547,152 @@ List<CRow> _demoRows() {
     r('rsvp', key, unit, {'event': int.parse(key.split('|').last)});
   }
   const polls = <List<Object>>[
-    ['Should the lobby be repainted this year?', true, 6, ['Yes, with a new color', 'Yes, same color', 'No, not needed']],
-    ['Best day for the quarterly general assembly?', false, -12, ['Saturday morning', 'Saturday evening', 'Sunday afternoon']],
-    ['Add more CCTV cameras in the parking area?', true, 10, ['Yes', 'No', 'Not sure']],
-    ['How big should the Christmas party budget be?', true, 14, ['₱20,000', '₱35,000', '₱50,000']],
+    ['Should the lobby be repainted this year?', true, 6, ['Yes, with a new color', 'Yes, same color', 'No, not needed'], 'Maintenance & repairs'],
+    ['Best day for the quarterly general assembly?', false, -12, ['Saturday morning', 'Saturday evening', 'Sunday afternoon'], 'Events & community'],
+    ['Add more CCTV cameras in the parking area?', true, 10, ['Yes', 'No', 'Not sure'], 'Safety & security'],
+    ['How big should the Christmas party budget be?', true, 14, ['₱20,000', '₱35,000', '₱50,000'], 'Finance & budget'],
   ];
   for (final p in polls) {
     final id = tid();
     final opts = (p[3] as List).cast<String>();
-    r('poll', id, '', {'id': id, 'question': p[0], 'open': p[1], 'closes': _sd(_off(p[2] as int)), 'options': opts});
+    r('poll', id, '', {'id': id, 'question': p[0], 'open': p[1], 'closes': _sd(_off(p[2] as int)), 'options': opts, 'category': p[4]});
     for (final u in withAcc) {
       if (u.label == 'Unit 3B' && !(p[0] as String).startsWith('Best day')) continue;
       if (_rnd() < 0.65) r('vote', '${u.label}|$id', u.label, {'poll': id, 'option': (_rnd() * opts.length).floor()});
     }
   }
+
+  // ---- elections and a survey (formatted text, several questions)
+  int pollRec(String kind, String titleHtml, String descHtml, String title, int closesIn, String showResults, bool open,
+      List<Map<String, dynamic>> qs, String category) {
+    final id = tid();
+    final d = _off(closesIn);
+    r('poll', id, '', {
+      'id': id,
+      'kind': kind,
+      'question': title,
+      'titleHtml': titleHtml,
+      'descHtml': descHtml,
+      'open': open,
+      'closes': _sd(d),
+      'closeKey': _dk(d),
+      'showResults': showResults,
+      'category': category,
+      'options': qs.first['options'],
+      'questions': qs,
+    });
+    return id;
+  }
+
+  void cast(int id, List<Map<String, dynamic>> qs, double share, Object? Function(Map<String, dynamic> q) fn) {
+    for (final u in withAcc) {
+      if (u.label == 'Unit 3B' && share < 1) continue;
+      if (_rnd() > share) continue;
+      final a = <String, dynamic>{};
+      for (final q in qs) {
+        final v = fn(q);
+        if (v != null) a[q['id'] as String] = v;
+      }
+      r('vote', '${u.label}|$id', u.label, {
+        'poll': id,
+        'answers': a,
+        'at': _off(-1).subtract(Duration(milliseconds: (_rnd() * 6 * 86400000).floor())).toUtc().toIso8601String(),
+      });
+    }
+  }
+
+  List<int> pickN(int n, int k) {
+    final all = [for (var i = 0; i < n; i++) i];
+    final out = <int>[];
+    while (out.length < k && all.isNotEmpty) {
+      out.add(all.removeAt((_rnd() * all.length).floor()));
+    }
+    return out;
+  }
+
+  Map<String, dynamic> pos(int i, String name, List<String> cands, int seats) => {
+        'id': 'q$i',
+        'type': seats > 1 ? 'multi' : 'choice',
+        'html': name,
+        'text': name.replaceAll(RegExp(r'<[^>]+>'), ''),
+        'required': false,
+        'max': seats,
+        'options': cands,
+      };
+
+  final elQs = [
+    pos(1, '<b>President</b>', ['Carla Aquino — Unit 5A', 'Ramon Dela Cruz — Unit 1B', 'Liza Villanueva — Unit 4B'], 1),
+    pos(2, '<b>Vice President</b>', ['Marco Chua — Unit 6B', 'Anna Reyes — Unit 3B'], 1),
+    pos(3, '<b>Secretary</b>', ['Joy Torres — Unit 2C', 'Ben Santos — Unit 1A'], 1),
+    pos(4, '<b>Treasurer</b>', ['Grace Evangelista — Unit 12B', 'Paolo Mendoza — Unit 8C'], 1),
+    pos(5, '<b>Board Directors</b> <i>(vote for up to 3)</i>',
+        ['Carla Aquino — Unit 5A', 'Ben Santos — Unit 1A', 'Marco Chua — Unit 6B', 'Joy Torres — Unit 2C', 'Liza Villanueva — Unit 4B'], 3),
+  ];
+  final elId = pollRec(
+      'election',
+      '<b>2026 Board of Directors election</b>',
+      'Choose the people who will manage the building for <b>2026–2027</b>.<ul><li>Each unit has <b>one secret ballot</b>.</li><li>You may leave a position blank to abstain.</li><li>The results are shown when voting closes.</li></ul>',
+      '2026 Board of Directors election',
+      12,
+      'closed',
+      true,
+      elQs,
+      'Governance & elections');
+  cast(elId, elQs, 0.7, (q) {
+    final n = (q['options'] as List).length;
+    return q['type'] == 'multi' ? pickN(n, 1 + (_rnd() * 3).floor()) : (_rnd() < 0.08 ? null : (_rnd() * n).floor());
+  });
+  final oldQs = [
+    pos(1, '<b>Chairperson</b>', ['Elena Castillo — Unit 7A', 'Roberto Lim — Unit 9B'], 1),
+    pos(2, '<b>Committee members</b> <i>(vote for up to 2)</i>', ['Nina Flores — Unit 3A', 'Victor Gomez — Unit 10A', 'Teresa Ramos — Unit 11C'], 2),
+  ];
+  final oldId = pollRec('election', '<b>2025 Homeowners’ committee election</b>', 'Closed election. Thank you to everyone who voted.',
+      '2025 Homeowners’ committee election', -40, 'closed', false, oldQs, 'Governance & elections');
+  cast(oldId, oldQs, 0.75, (q) {
+    final n = (q['options'] as List).length;
+    return q['type'] == 'multi' ? pickN(n, 2) : (_rnd() * n).floor();
+  });
+  final svQs = <Map<String, dynamic>>[
+    {'id': 'q1', 'type': 'choice', 'html': '<b>How often</b> do you use the pool?', 'text': 'How often do you use the pool?', 'required': true, 'max': 0,
+      'options': ['Every week', 'A few times a month', 'Rarely', 'Never']},
+    {'id': 'q2', 'type': 'multi', 'html': 'Which facilities should be <u>improved first</u>? <i>(choose up to 3)</i>', 'text': 'Which facilities should be improved first?',
+      'required': true, 'max': 3, 'options': ['Pool', 'Gym', 'Function Hall', 'Parking', 'Lobby', 'Coffee lounge']},
+    {'id': 'q3', 'type': 'rating', 'html': 'How satisfied are you with the <b>cleanliness</b> of the common areas?',
+      'text': 'How satisfied are you with the cleanliness of the common areas?', 'required': true, 'max': 0, 'options': <String>[]},
+    {'id': 'q4', 'type': 'para', 'html': 'Anything else you would like the board to know?', 'text': 'Anything else you would like the board to know?',
+      'required': false, 'max': 0, 'options': <String>[]},
+  ];
+  const notes = [
+    'More lighting near the parking area, please.',
+    'The gym needs two more treadmills.',
+    'Please repaint the lobby soon.',
+    'Thank you for the quick repairs in March!',
+    'Add more bike racks.',
+    'Quiet hours should be enforced on weekends.',
+  ];
+  final svId = pollRec(
+      'poll',
+      '<b>Building facilities survey</b>',
+      'Help us decide what to improve first. It takes <i>two minutes</i>. Your answers are shared with the board.',
+      'Building facilities survey',
+      9,
+      'vote',
+      true,
+      svQs,
+      'Facilities & amenities');
+  cast(svId, svQs, 0.6, (q) {
+    switch (q['id']) {
+      case 'q1':
+        return (_rnd() * 4).floor();
+      case 'q2':
+        return pickN(6, 1 + (_rnd() * 3).floor());
+      case 'q3':
+        return 2 + (_rnd() * 4).floor();
+      default:
+        return _rnd() < 0.4 ? notes[(_rnd() * notes.length).floor()] : null;
+    }
+  });
+  r('setting', 'poll_categories', '', {'list': pollBuiltInCategories});
 
   // ---- bookings
   int toMin(String t) {
@@ -554,23 +761,24 @@ List<CRow> _demoRows() {
 
   // ---- motor parking: 20 slots
   final rented = <String>{};
+  String sizeOfSlot(int n) => n <= 6 ? 'Small' : (n <= 16 ? 'Regular' : 'Large');
   void rent(String id, String unit, String plan, int off, int days, int amount) {
     rented.add(id);
-    r('slot', id, '', {'id': id, 'unit': unit, 'plan': plan, 'from': _dk(_off(off)), 'until': _dk(_off(off + days - 1)), 'amount': amount});
+    r('slot', id, '', {'id': id, 'unit': unit, 'plan': plan, 'from': _dk(_off(off)), 'until': _dk(_off(off + days - 1)), 'amount': amount, 'size': sizeOfSlot(int.parse(id.substring(2)))});
   }
 
-  rent('M-02', 'Unit 1A', 'month', -10, 30, 1500);
-  rent('M-04', 'Unit 9B', 'day', -1, 4, 400);
+  rent('M-02', 'Unit 1A', 'month', -10, 30, 1000);
+  rent('M-04', 'Unit 9B', 'day', -1, 4, 280);
   rent('M-08', 'Unit 2B', 'month', -20, 30, 1500);
   rent('M-09', 'Unit 2A', 'month', -5, 30, 1500);
   rent('M-11', 'Unit 3A', 'day', 0, 7, 700);
   rent('M-13', 'Unit 4A', 'month', -26, 30, 1500);
   rent('M-15', 'Unit 6C', 'month', -3, 30, 1500);
   rent('M-16', 'Unit 8B', 'day', -2, 3, 300);
-  rent('M-18', 'Unit 10A', 'month', -15, 30, 1500);
+  rent('M-18', 'Unit 10A', 'month', -15, 30, 2200);
   for (var s = 1; s <= 20; s++) {
     final id = 'M-${_two(s)}';
-    if (!rented.contains(id)) r('slot', id, '', {'id': id});
+    if (!rented.contains(id)) r('slot', id, '', {'id': id, 'size': sizeOfSlot(s)});
   }
   const reqs = <List<String>>[
     ['Unit 7A', 'M-05'],
@@ -587,7 +795,7 @@ List<CRow> _demoRows() {
       'slot': reqs[k][1],
       'plan': 'month',
       'days': 1,
-      'amount': 1500,
+      'amount': 1000,
       'confirmed': false,
     });
     if (k == 0) {
@@ -599,8 +807,9 @@ List<CRow> _demoRows() {
         'forText': 'Motor parking rental',
         'method': 'GCash',
         'reference': 'GC${year * 1000000 + 101403}',
-        'amount': 1500,
+        'amount': 1000,
         'date': _sd(now),
+        'at': now.subtract(const Duration(hours: 5)).millisecondsSinceEpoch,
         'status': 'Pending',
         'slot': reqs[k][1],
       });
