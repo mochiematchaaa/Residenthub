@@ -5,6 +5,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../services/demo.dart' show kDemo;
 import 'amenity.dart';
 import 'community.dart';
 import 'doc_model.dart';
@@ -650,7 +651,7 @@ class AppState extends ChangeNotifier {
     remParking = RemCfg(days: 5, freq: 'every');
     remDues = RemCfg(days: 2, freq: 'daily');
     parkSoonDays = 5;
-    autoBillOn = true;
+    autoBillOn = kDemo;
     smsLog.clear();
     _ballots.clear();
     pollCats
@@ -1223,7 +1224,7 @@ class AppState extends ChangeNotifier {
   // ---- automatic posting of the payments residents send
 
   /// When on, a payment that matches its charge is posted by itself [autoPostHours] after it was sent.
-  bool autoPostOn = true;
+  bool autoPostOn = kDemo; // off on the real system until the administrator turns it on
   int autoPostHours = 24;
 
   void setAutoPost(bool on, int hours) {
@@ -1355,7 +1356,7 @@ class AppState extends ChangeNotifier {
   // ---- automatic monthly billing
 
   /// When on, the first time an administrator has the app open in a new month, every unit not yet billed for that month is billed.
-  bool autoBillOn = true;
+  bool autoBillOn = kDemo; // off on the real system until the administrator turns it on
 
   void setAutoBill(bool on) {
     autoBillOn = on;
@@ -1392,7 +1393,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// Late charge added by the system when a charge is still unpaid [lateFeeDays] days after its due date.
-  bool lateFeeOn = true;
+  bool lateFeeOn = kDemo; // off on the real system until the administrator turns it on
   int lateFeeDays = 1;
 
   void setLateFee(bool on, int days, num pct) {

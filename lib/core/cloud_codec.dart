@@ -58,6 +58,9 @@ String _stable(dynamic v) {
 /// A comparable form of a record: keys sorted, empty values left out.
 String canonJson(dynamic v) => _stable(_clean(v));
 
+/// An on/off setting saved as true/false or 'yes'/'no'; [d] when it was never saved.
+bool _flag(dynamic v, bool d) => v == null ? d : (v == true || v == 'yes');
+
 String _s(Map j, String k, [String d = '']) {
   final v = j[k];
   return v == null ? d : v.toString();
@@ -530,13 +533,13 @@ List<CRow> exportRows(AppState a) {
   }
   add('setting', 'dues_rate_sqm', '', {'rate': a.duesRate});
   add('setting', 'poll_categories', '', {'list': a.pollCats});
-  add('setting', 'autopost', '', {'on': a.autoPostOn, 'hours': a.autoPostHours});
+  add('setting', 'autopost', '', {'on': a.autoPostOn ? 'yes' : 'no', 'hours': a.autoPostHours});
   add('setting', 'reminders', '', {
     for (final k in remKinds) k: {'on': a.remOf(k).on ? 'yes' : 'no', 'days': a.remOf(k).days, 'freq': a.remOf(k).freq, 'msg': a.remOf(k).msg},
   });
   add('setting', 'autobill', '', {'on': a.autoBillOn ? 'yes' : 'no'});
   add('setting', 'paycheck', '', {'pct': a.latePct});
-  add('setting', 'latefee', '', {'on': a.lateFeeOn, 'days': a.lateFeeDays});
+  add('setting', 'latefee', '', {'on': a.lateFeeOn ? 'yes' : 'no', 'days': a.lateFeeDays});
   add('setting', 'paymethods', '', {
     'list': [
       for (final m in a.payMethods) {'name': m.name, 'details': m.details, 'enabled': m.enabled}
@@ -680,12 +683,12 @@ void importRows(AppState a, Iterable<CRow> all) {
   a.duesRate = _num(st['dues_rate_sqm'] ?? const {}, 'rate');
   final ap = st['autopost'];
   if (ap != null) {
-    a.autoPostOn = ap['on'] != false;
+    a.autoPostOn = _flag(ap['on'], kDemo);
     final h = _num(ap, 'hours').toInt();
     a.autoPostHours = h > 0 ? h : 24;
   }
   final ab = st['autobill'];
-  a.autoBillOn = ab == null || _s(ab, 'on', 'yes') != 'no';
+  a.autoBillOn = ab == null ? kDemo : _flag(ab['on'], kDemo);
   final rm = st['reminders'];
   for (final k in remKinds) {
     final c = rm?[k];
@@ -709,7 +712,7 @@ void importRows(AppState a, Iterable<CRow> all) {
   if (lateCfg != null && _num(lateCfg, 'pct') > 0) a.latePct = _num(lateCfg, 'pct');
   final lf = st['latefee'];
   if (lf != null) {
-    a.lateFeeOn = lf['on'] != false;
+    a.lateFeeOn = _flag(lf['on'], kDemo);
     final ld = _num(lf, 'days').toInt();
     a.lateFeeDays = ld >= 1 ? ld : 1;
   }
