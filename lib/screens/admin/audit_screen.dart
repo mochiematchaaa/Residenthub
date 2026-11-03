@@ -58,8 +58,7 @@ class _AdminAuditState extends State<AdminAudit> {
       final pages = pageCount(r.total, _size);
       if (_page > pages - 1 && r.total > 0) {
         _page = pages - 1;
-        await _load();
-        return;
+        return _load();
       }
       setState(() {
         _rows = r.rows;
