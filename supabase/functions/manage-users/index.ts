@@ -54,11 +54,39 @@ Deno.serve(async (req: Request) => {
     if (callerErr || !caller?.user) return reply({ error: "Please sign in again." }, 401);
     const { data: me } = await admin
       .from("profiles")
-      .select("role,suspended")
+      .select("role,suspended,name,email")
       .eq("id", caller.user.id)
       .maybeSingle();
     if (!me || me.role !== "admin" || me.suspended) {
       return reply({ error: "Only the administrator can do that." }, 403);
+    }
+
+    // Account changes made here run with the server key, so the database cannot see who is
+    // signed in. We write the audit trail entry ourselves, with the administrator as the actor.
+    async function audit(
+      action: "INSERT" | "UPDATE" | "DELETE",
+      recordId: string,
+      unit: string,
+      oldValue: unknown,
+      newValue: unknown,
+    ) {
+      try {
+        const { error } = await admin.from("audit_log").insert({
+          actor_id: caller.user.id,
+          actor_name: (me!.name || me!.email || "Administrator") as string,
+          actor_role: "admin",
+          action,
+          source_table: "profiles",
+          kind: "account",
+          record_id: recordId,
+          unit,
+          old_value: oldValue ?? null,
+          new_value: newValue ?? null,
+        });
+        if (error) console.error("audit insert failed", error.message);
+      } catch (e) {
+        console.error("audit insert failed", String((e as Error)?.message ?? e));
+      }
     }
 
     const body = await req.json().catch(() => ({}));
@@ -66,16 +94,16 @@ Deno.serve(async (req: Request) => {
     const userId = String(body.userId ?? "");
 
     // Never let this function touch an administrator account (including your own).
-    async function targetResident() {
+    async function targetResident(): Promise<{ error?: string; row?: any }> {
       if (!userId) return { error: "Missing account." };
       const { data: t } = await admin
         .from("profiles")
-        .select("id,role")
+        .select("id,role,name,email,phone,unit,suspended")
         .eq("id", userId)
         .maybeSingle();
       if (!t) return { error: "Account not found." };
       if (t.role !== "resident") return { error: "That is not a resident account." };
-      return { ok: true };
+      return { row: t };
     }
 
     if (action === "create") {
@@ -120,6 +148,7 @@ Deno.serve(async (req: Request) => {
         await admin.auth.admin.deleteUser(created.user.id);
         return reply({ error: pErr.message }, 500);
       }
+      await audit("INSERT", created.user.id, unit, null, { email, name, phone, unit, role: "resident" });
       return reply({ ok: true, userId: created.user.id, email, password });
     }
 
@@ -130,6 +159,12 @@ Deno.serve(async (req: Request) => {
       const { error } = await admin.auth.admin.updateUserById(userId, { password });
       if (error) return reply({ error: error.message }, 500);
       await admin.from("profiles").update({ must_change_password: true }).eq("id", userId);
+      await audit("UPDATE", userId, t.row.unit ?? "", { email: t.row.email, name: t.row.name }, {
+        email: t.row.email,
+        name: t.row.name,
+        event: "Temporary password issued",
+        must_change_password: true,
+      });
       return reply({ ok: true, password });
     }
 
@@ -142,6 +177,7 @@ Deno.serve(async (req: Request) => {
       });
       if (error) return reply({ error: error.message }, 500);
       await admin.from("profiles").update({ suspended }).eq("id", userId);
+      await audit("UPDATE", userId, t.row.unit ?? "", { name: t.row.name, suspended: !!t.row.suspended }, { name: t.row.name, suspended });
       return reply({ ok: true });
     }
 
@@ -163,6 +199,17 @@ Deno.serve(async (req: Request) => {
       }
       const { error } = await admin.from("profiles").update(patch).eq("id", userId);
       if (error) return reply({ error: error.message }, 500);
+      const before: Record<string, unknown> = {};
+      const after: Record<string, unknown> = {};
+      for (const k of Object.keys(patch)) {
+        if ((t.row[k] ?? "") !== (patch[k] ?? "")) {
+          before[k] = t.row[k] ?? "";
+          after[k] = patch[k];
+        }
+      }
+      if (Object.keys(after).length) {
+        await audit("UPDATE", userId, (patch.unit ?? t.row.unit ?? "") as string, { email: t.row.email, ...before }, { email: t.row.email, ...after });
+      }
       return reply({ ok: true });
     }
 
@@ -172,6 +219,7 @@ Deno.serve(async (req: Request) => {
       const { error } = await admin.auth.admin.deleteUser(userId);
       if (error) return reply({ error: error.message }, 500);
       await admin.from("profiles").delete().eq("id", userId);
+      await audit("DELETE", userId, t.row.unit ?? "", { email: t.row.email, name: t.row.name, phone: t.row.phone, unit: t.row.unit, role: "resident" }, null);
       return reply({ ok: true });
     }
 
